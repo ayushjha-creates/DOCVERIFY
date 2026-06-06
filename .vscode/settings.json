@@ -1,0 +1,9 @@
+{
+    "python.defaultInterpreterPath": "/Users/ayush/document verification /backend/venv/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.analysis.extraPaths": [
+        "/Users/ayush/document verification /backend"
+    ],
+    "python-envs.pythonProjects": [],
+    "css.lint.unknownAtRules": "ignore"
+}
