@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { analyzeDocument, AnalysisResult, getPreviewUrl, getMarkedImageUrl } from "@/lib/api";
+import { analyzeDocument, AnalysisResult } from "@/lib/api";
 
 type AppState = "welcome" | "uploaded" | "analyzing" | "results";
 
@@ -370,13 +370,9 @@ export default function Home() {
 
               <div className="lg:col-span-2 space-y-8">
                 <VisualEvidence
-                  originalUrl={getPreviewUrl(result.session_id)}
-                  markedImageUrls={result.results.marked_image_urls?.map(
-                    (p) => ({ page: p.page, url: getMarkedImageUrl(p.url) })
-                  )}
-                  signatureImageUrls={result.results.signature_image_urls?.map(
-                    (p) => ({ page: p.page, url: getMarkedImageUrl(p.url) })
-                  )}
+                  previewB64={result.results.preview_b64}
+                  markedImages={result.results.marked_images}
+                  signatureImages={result.results.signature_images}
                   signatureCount={result.results.signature_count}
                   analyzedPages={result.results.analyzed_pages}
                 />
@@ -395,7 +391,8 @@ export default function Home() {
 
             <Separator />
             <ResultActions
-              sessionId={result.session_id}
+              reportB64={result.results.report_b64}
+              filename={result.filename}
               onReset={handleReset}
               onShare={handleShare}
             />

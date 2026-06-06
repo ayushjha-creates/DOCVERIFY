@@ -1,22 +1,33 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { getReportUrl } from "@/lib/api";
 
 interface ResultActionsProps {
-  sessionId: string;
+  reportB64?: string;
+  filename?: string;
   onReset: () => void;
   onShare: () => void;
 }
 
-export function ResultActions({ sessionId, onReset, onShare }: ResultActionsProps) {
+export function ResultActions({ reportB64, filename, onReset, onShare }: ResultActionsProps) {
+
+  const handleDownload = () => {
+    if (reportB64) {
+      const link = document.createElement("a");
+      link.href = `data:application/pdf;base64,${reportB64}`;
+      link.download = `DOCVERIFY_Report_${(filename || "document").replace(/\.[^/.]+$/, "")}.pdf`;
+      link.click();
+    }
+  };
+
   return (
     <div className="flex flex-wrap items-center gap-3 justify-center">
       <Button
         variant="default"
         size="lg"
         className="gap-2"
-        onClick={() => window.open(getReportUrl(sessionId), "_blank")}
+        onClick={handleDownload}
+        disabled={!reportB64}
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />

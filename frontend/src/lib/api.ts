@@ -26,15 +26,14 @@ export interface SignatureDetail {
   page?: number;
 }
 
-export interface PageImage {
+export interface Base64Image {
   page: number;
-  url: string;
+  data: string;
 }
 
 export interface AnalysisResult {
   session_id: string;
   filename: string;
-  file_preview_url: string;
   results: {
     analyzed_pages: number;
     score: number;
@@ -50,11 +49,10 @@ export interface AnalysisResult {
     signature_details: SignatureDetail[];
     findings: Record<string, Finding[]>;
     blockchain: BlockchainInfo;
-    report_url: string;
-    marked_image_urls?: PageImage[];
-    marked_image_url?: string;
-    signature_image_urls?: PageImage[];
-    signature_image_url?: string;
+    preview_b64?: string;
+    marked_images?: Base64Image[];
+    signature_images?: Base64Image[];
+    report_b64?: string;
   };
 }
 
@@ -81,8 +79,4 @@ export function getReportUrl(sessionId: string): string {
 
 export function getPreviewUrl(sessionId: string): string {
   return `${API_BASE}/api/temp/${sessionId}/preview.png`;
-}
-
-export function getMarkedImageUrl(url: string): string {
-  return `${API_BASE}${url}`;
 }

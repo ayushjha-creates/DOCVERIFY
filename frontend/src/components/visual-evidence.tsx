@@ -1,29 +1,25 @@
 "use client";
 
 import { useState } from "react";
-
-interface PageImage {
-  page: number;
-  url: string;
-}
+import type { Base64Image } from "@/lib/api";
 
 interface VisualEvidenceProps {
-  originalUrl: string;
-  markedImageUrls?: PageImage[];
-  signatureImageUrls?: PageImage[];
+  previewB64?: string;
+  markedImages?: Base64Image[];
+  signatureImages?: Base64Image[];
   signatureCount?: number;
   analyzedPages?: number;
 }
 
 export function VisualEvidence({
-  originalUrl,
-  markedImageUrls,
-  signatureImageUrls,
+  previewB64,
+  markedImages,
+  signatureImages,
   signatureCount,
   analyzedPages,
 }: VisualEvidenceProps) {
-  const hasMarked = markedImageUrls && markedImageUrls.length > 0;
-  const hasSignature = signatureImageUrls && signatureImageUrls.length > 0;
+  const hasMarked = markedImages && markedImages.length > 0;
+  const hasSignature = signatureImages && signatureImages.length > 0;
 
   const tabs: { key: string; label: string }[] = [
     { key: "original", label: "Original Document" },
@@ -41,16 +37,16 @@ export function VisualEvidence({
   const [activeTab, setActiveTab] = useState(tabs[0]?.key || "original");
   const [activePage, setActivePage] = useState(1);
 
-  const currentMarkedUrl =
-    hasMarked && markedImageUrls
-      ? markedImageUrls.find((p) => p.page === activePage)?.url ||
-        markedImageUrls[0]?.url
+  const currentMarked =
+    hasMarked && markedImages
+      ? markedImages.find((p) => p.page === activePage) ||
+        markedImages[0]
       : undefined;
 
-  const currentSignatureUrl =
-    hasSignature && signatureImageUrls
-      ? signatureImageUrls.find((p) => p.page === activePage)?.url ||
-        signatureImageUrls[0]?.url
+  const currentSignature =
+    hasSignature && signatureImages
+      ? signatureImages.find((p) => p.page === activePage) ||
+        signatureImages[0]
       : undefined;
 
   const totalPages = analyzedPages || 1;
@@ -93,19 +89,19 @@ export function VisualEvidence({
       )}
 
       <div className="rounded-xl border bg-card overflow-hidden">
-        {activeTab === "original" && (
+        {activeTab === "original" && previewB64 && (
           <div className="p-4">
             <img
-              src={originalUrl}
+              src={`data:image/png;base64,${previewB64}`}
               alt="Original document"
               className="w-full max-h-[500px] object-contain rounded-lg"
             />
           </div>
         )}
-        {activeTab === "marked" && currentMarkedUrl && (
+        {activeTab === "marked" && currentMarked && (
           <div className="p-4">
             <img
-              src={currentMarkedUrl}
+              src={`data:image/png;base64,${currentMarked.data}`}
               alt="ELA tamper heatmap"
               className="w-full max-h-[500px] object-contain rounded-lg"
             />
@@ -115,10 +111,10 @@ export function VisualEvidence({
             </p>
           </div>
         )}
-        {activeTab === "signature" && currentSignatureUrl && (
+        {activeTab === "signature" && currentSignature && (
           <div className="p-4">
             <img
-              src={currentSignatureUrl}
+              src={`data:image/png;base64,${currentSignature.data}`}
               alt="Signature detection overlay"
               className="w-full max-h-[500px] object-contain rounded-lg"
             />
