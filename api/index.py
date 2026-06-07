@@ -101,16 +101,19 @@ def _ensure_deps():
 
 _ensure_deps()
 
-# ── Ensure bundled tesseract binary is executable ──
-_tess_bin = os.path.join(_api_dir, "bin", "tesseract")
-if os.path.exists(_tess_bin):
-    os.chmod(_tess_bin, 0o755)
-    _lib_dir = os.path.join(_api_dir, "bin", "lib")
-    if os.path.isdir(_lib_dir):
-        for f in os.listdir(_lib_dir):
-            fp = os.path.join(_lib_dir, f)
-            if os.path.isfile(fp) and (f.endswith(".so") or ".so." in f):
-                os.chmod(fp, 0o755)
+# ── Ensure bundled tesseract binary is executable (Vercel FS may be read-only) ──
+try:
+    _tess_bin = os.path.join(_api_dir, "bin", "tesseract")
+    if os.path.exists(_tess_bin):
+        os.chmod(_tess_bin, 0o755)
+        _lib_dir = os.path.join(_api_dir, "bin", "lib")
+        if os.path.isdir(_lib_dir):
+            for f in os.listdir(_lib_dir):
+                fp = os.path.join(_lib_dir, f)
+                if os.path.isfile(fp) and (f.endswith(".so") or ".so." in f):
+                    os.chmod(fp, 0o755)
+except OSError:
+    pass  # read-only FS on Vercel
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
