@@ -234,11 +234,6 @@ async def analyze_document(file: UploadFile = File(...)):
         images, cleaned_images = pp_result
         num_pages = len(images)
         image_pool = cleaned_images if cleaned_images else images
-        MAX_PAGES = 3
-        if num_pages > MAX_PAGES:
-            image_pool = image_pool[:MAX_PAGES]
-            num_pages = MAX_PAGES
-            logger.info(f"Session {session_id}: truncated to {MAX_PAGES} pages (had {len(images)})")
         results["analyzed_pages"] = num_pages
         logger.info(f"Session {session_id}: {num_pages} pages")
 
@@ -360,11 +355,6 @@ async def analyze_document(file: UploadFile = File(...)):
             for r in all_qr:
                 all_qr_details.extend(r.get("individual_results", []))
         engine_results["qr"] = {"status": qr_agg_status, "deduction": qr_agg_deduct}
-        qr_dbg = {}
-        if all_qr:
-            for r in all_qr:
-                if r.get("_dbg"):
-                    qr_dbg = r["_dbg"]
 
         tamper_agg_status = _worst_engine_status(all_tampering)
         tamper_agg_score = worst_of(all_tampering)
@@ -436,7 +426,6 @@ async def analyze_document(file: UploadFile = File(...)):
                 "signature_count": sum(r.get("signatures_count", 0) for r in all_signature),
                 "signature_details": sig_details_all,
                 "qr_details": all_qr_details,
-                "qr_detection_debug": qr_dbg,
                 "findings": findings,
                 "blockchain": results["blockchain"],
                 "report_b64": report_b64,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef } from "react";
 import { UploadSection } from "@/components/upload-section";
 import { ScoreGauge } from "@/components/score-gauge";
 import { DetailedReport } from "@/components/detailed-report";
@@ -24,8 +24,6 @@ export default function Home() {
   const [progressMsg, setProgressMsg] = useState("");
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string>("");
-  const [stuck, setStuck] = useState(false);
-  const stuckRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = useCallback((f: File) => {
@@ -40,7 +38,6 @@ export default function Home() {
     if (!file) return;
     setAnalyzing(true);
     setError("");
-    setStuck(false);
     setState("analyzing");
 
     const steps = [
@@ -59,23 +56,14 @@ export default function Home() {
       setProgress((p) => {
         const next = Math.min(p + 3, 95);
         const step = steps.find((s) => s.progress >= next);
-        if (step && !stuckRef.current) setProgressMsg(step.msg);
+        if (step) setProgressMsg(step.msg);
         return next;
       });
     }, 600);
 
-    const stuckTimer = setTimeout(() => {
-      stuckRef.current = true;
-      setStuck(true);
-      setProgressMsg("Still analyzing... Large documents may take up to 45 seconds.");
-    }, 35000);
-
     try {
       const res = await analyzeDocument(file);
       clearInterval(interval);
-      clearTimeout(stuckTimer);
-      stuckRef.current = false;
-      setStuck(false);
       setProgress(100);
       setProgressMsg("Analysis complete!");
       setTimeout(() => {
@@ -84,9 +72,6 @@ export default function Home() {
       }, 500);
     } catch (err: unknown) {
       clearInterval(interval);
-      clearTimeout(stuckTimer);
-      stuckRef.current = false;
-      setStuck(false);
       setError(err instanceof Error ? err.message : "Analysis failed");
       setState("uploaded");
       setAnalyzing(false);
@@ -102,11 +87,6 @@ export default function Home() {
     if (f) handleFileSelect(f);
   }, [handleFileSelect]);
 
-  useEffect(() => {
-    if (!analyzing) return;
-    return () => setAnalyzing(false);
-  }, [analyzing]);
-
   const handleReset = useCallback(() => {
     setState("welcome");
     setFile(null);
@@ -114,7 +94,6 @@ export default function Home() {
     setResult(null);
     setError("");
     setAnalyzing(false);
-    setStuck(false);
     setProgress(0);
     setProgressMsg("");
   }, []);
@@ -254,12 +233,6 @@ export default function Home() {
             <p className="text-muted-foreground mb-8">{progressMsg}</p>
             <Progress value={progress} className="h-2 mb-2" />
             <p className="text-xs text-muted-foreground">{Math.round(progress)}% complete</p>
-            {stuck && (
-              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                <p className="text-sm text-amber-800 font-medium">Taking longer than expected</p>
-                <p className="text-xs text-amber-600 mt-1">Analysis is still running. Large documents may take up to 25 seconds.</p>
-              </div>
-            )}
             <div className="mt-10 space-y-3 text-left max-w-sm mx-auto">
               {[
                 { p: 10, label: "Preprocessing", msg: "Converting & cleaning document" },

@@ -60,24 +60,15 @@ export async function analyzeDocument(file: File): Promise<AnalysisResult> {
   const formData = new FormData();
   formData.append("file", file);
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 45000);
-
   let response;
   try {
     response = await fetch(`${API_BASE}/api/analyze`, {
       method: "POST",
       body: formData,
-      signal: controller.signal,
     });
   } catch (networkError) {
-    clearTimeout(timeout);
-    if (networkError instanceof DOMException && networkError.name === "AbortError") {
-      throw new Error("Analysis timed out (took longer than 45 seconds). Large documents with many pages may exceed the server limit. Try a smaller file.");
-    }
     throw new Error(`Network error: Unable to reach the server. ${networkError instanceof Error ? networkError.message : "Please check your connection."}`);
   }
-  clearTimeout(timeout);
 
   if (!response.ok) {
     let detail = "Analysis failed";

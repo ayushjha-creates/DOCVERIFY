@@ -15,123 +15,52 @@ SUSPICIOUS_TLDS = ['.xyz', '.top', '.click', '.tk', '.ml', '.ga', '.cf']
 
 
 def detect_all_qrs(image_path):
-    results = []
-    dbg = {"img_size": "?", "multi": 0, "iter": 0, "pyzbar": 0}
-
-    # Read image ONCE, share the arrays
     img_pil = Image.open(image_path).convert('RGB')
     img_cv = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
-    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
-    h, w = gray.shape
-    dbg["img_size"] = f"{w}x{h}"
+    results = []
 
-    def _add(data, pts=None):
-        if data and not any(r["data"] == data for r in results):
-            results.append(_make_qr_obj_from_cv(data, pts))
-            return True
-        return False
-
-    def _run_multi(src):
-        try:
-            ret, dlist, plist, *_ = cv2.QRCodeDetector().detectAndDecodeMulti(src)
-            if ret and dlist:
-                count = 0
-                for data, pts in zip(dlist, plist):
-                    if _add(data, pts):
-                        count += 1
-                return count
-        except (AttributeError, cv2.error):
-            pass
-        return 0
-
-    def _run_single(src):
-        try:
-            data, bbox, _ = cv2.QRCodeDetector().detectAndDecode(src)
-            if _add(data, bbox):
-                return 1
-        except (AttributeError, cv2.error):
-            pass
-        return 0
-
-    # Pass 1: Multi on full gray  (fast, basic)
-    dbg["multi"] += _run_multi(gray)
-
-    # Pass 2: Multi on thresholded (catches low-contrast QRs)
-    th = _threshold(gray)
-    dbg["multi"] += _run_multi(th)
-
-    # Pass 3: Conditional overlapping tiles (only if < 2 QRs found so far)
-    if len(results) < 2:
-        tile_w = int(w * 0.72)
-        for x_start in [0, w // 4, w // 2]:
-            x_end = min(x_start + tile_w, w)
-            if x_end - x_start < 100:
-                continue
-            tile = gray[:, x_start:x_end]
-            dbg["multi"] += _run_multi(tile)
-
-    # Pass 4: Single detect on full (quick backup)
-    dbg["iter"] += _run_single(gray)
-
-    # Pass 5: pyzbar (low priority, skip on serverless where it never works)
     if PYZBAR_AVAILABLE:
-        try:
-            for img_in in (img_pil, img_pil.convert('L'), Image.fromarray(gray)):
-                for qr in pyzbar_decode(img_in):
-                    data_str = qr.data.decode('utf-8', errors='ignore') if isinstance(qr.data, bytes) else str(qr.data)
-                    if data_str and not any(r["data"] == data_str for r in results):
-                        results.append(_make_qr_obj_from_pyzbar(qr))
-                        dbg["pyzbar"] += 1
-        except Exception:
-            pass
-
-    seen_data = set()
-    unique = []
-    for r in results:
-        if r["data"] not in seen_data:
-            seen_data.add(r["data"])
-            unique.append(r)
-
-    print(f"[qr] detect: multi={dbg['multi']} iter={dbg['iter']} pyz={dbg['pyzbar']} total={len(results)} unique={len(unique)} img={dbg['img_size']}", flush=True)
-    return unique, dbg
-
-
-def _threshold(gray):
-    try:
-        _, th = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        return th
-    except Exception:
-        return gray
-
-
-def _make_qr_obj_from_cv(data, bbox):
-    if bbox is not None and len(bbox) > 0:
-        pts = np.array(bbox[0] if isinstance(bbox, (list, tuple)) or bbox.ndim == 3 else bbox).astype(int)
-        if pts.ndim == 3:
-            pts = pts[0]
-        left, top = int(min(pts[:, 0])), int(min(pts[:, 1]))
-        right, bottom = int(max(pts[:, 0])), int(max(pts[:, 1]))
+        found = pyzbar_decode(img_pil)
+        results.extend(found)
+        gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        found2 = pyzbar_decode(Image.fromarray(thresh))
     else:
-        left = top = right = bottom = 0
-    return {
-        "data": data if isinstance(data, str) else data.decode('utf-8', errors='ignore'),
-        "position": {"left": left, "top": top, "width": right - left, "height": bottom - top},
-    }
+        found = _decode_qr_cv2(img_cv)
+        found2 = []
+        if found:
+            results.append(found)
+
+    unique = []
+    seen_data = set()
+    for qr in results + (found2 if PYZBAR_AVAILABLE else []):
+        data_str = qr.data.decode('utf-8', errors='ignore') if isinstance(qr.data, bytes) else str(qr.data)
+        k = (data_str, qr.rect.left // 20, qr.rect.top // 20)
+        if k not in seen_data:
+            seen_data.add(k)
+            unique.append(qr)
+    return unique
 
 
-def _make_qr_obj_from_pyzbar(qr):
-    data_str = qr.data.decode('utf-8', errors='ignore') if isinstance(qr.data, bytes) else str(qr.data)
-    return {
-        "data": data_str,
-        "position": {"left": qr.rect.left, "top": qr.rect.top, "width": qr.rect.width, "height": qr.rect.height},
-    }
+def _decode_qr_cv2(img):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    qr_detector = cv2.QRCodeDetector()
+    data, bbox, _ = qr_detector.detectAndDecode(gray)
+    if data:
+        return type('QRObj', (), {'data': data.encode(), 'type': 'QRCODE', 'rect': type('Rect', (), {'left': 0, 'top': 0, 'width': 0, 'height': 0})})()
+    return None
 
 
 def analyze_single_qr(qr, index):
+    data_str = qr.data.decode('utf-8', errors='ignore') if isinstance(qr.data, bytes) else str(qr.data)
     result = {
         "index": index,
-        "data": qr["data"],
-        "position": qr["position"],
+        "data": data_str,
+        "type": str(qr.type),
+        "position": {
+            "left": qr.rect.left, "top": qr.rect.top,
+            "width": qr.rect.width, "height": qr.rect.height,
+        },
         "status": "OK",
         "flags": [],
         "details": "",
@@ -179,7 +108,7 @@ def analyze_single_qr(qr, index):
 
 
 def analyse_qr(file_path):
-    all_qrs, qr_dbg = detect_all_qrs(file_path)
+    all_qrs = detect_all_qrs(file_path)
 
     if len(all_qrs) == 0:
         return {
@@ -226,5 +155,4 @@ def analyse_qr(file_path):
         "details": summary,
         "individual_results": individual,
         "flags": global_flags,
-        "_dbg": qr_dbg,
     }
