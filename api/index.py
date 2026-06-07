@@ -40,7 +40,7 @@ from modules.scoring import calculate_score
 from modules.blockchain import create_blockchain_verification
 from modules.report_generator import generate_pdf_report
 
-app = FastAPI(title="DOCVERIFY AI API", version="1.0.0")
+app = FastAPI(title="DOCVERIFY AI API", version="1.0.0", root_path="/api")
 
 app.add_middleware(
     CORSMiddleware,
