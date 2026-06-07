@@ -60,14 +60,30 @@ export async function analyzeDocument(file: File): Promise<AnalysisResult> {
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch(`${API_BASE}/api/analyze`, {
-    method: "POST",
-    body: formData,
-  });
+  let response;
+  try {
+    response = await fetch(`${API_BASE}/api/analyze`, {
+      method: "POST",
+      body: formData,
+    });
+  } catch (networkError) {
+    throw new Error(`Network error: Unable to reach the server. ${networkError instanceof Error ? networkError.message : "Please check your connection."}`);
+  }
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: "Analysis failed" }));
-    throw new Error(error.detail || "Analysis failed");
+    let detail = "Analysis failed";
+    let statusCode = response.status;
+    try {
+      const errorBody = await response.json();
+      detail = errorBody.detail || detail;
+    } catch {
+      try {
+        detail = await response.text() || detail;
+      } catch {
+        detail = `Server returned ${statusCode}`;
+      }
+    }
+    throw new Error(`${detail} (HTTP ${statusCode})`);
   }
 
   return response.json();
