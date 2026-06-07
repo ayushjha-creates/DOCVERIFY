@@ -18,13 +18,12 @@ def detect_all_qrs(image_path):
     results = []
     dbg = {"img_size": "?", "multi": 0, "iter": 0, "pyzbar": 0}
 
-    def _load():
-        img = Image.open(image_path).convert('RGB')
-        cvimg = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-        g = cv2.cvtColor(cvimg, cv2.COLOR_BGR2GRAY)
-        h, w = g.shape
-        dbg["img_size"] = f"{w}x{h}"
-        return g, img
+    # Read image ONCE, share the arrays
+    img_pil = Image.open(image_path).convert('RGB')
+    img_cv = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape
+    dbg["img_size"] = f"{w}x{h}"
 
     def _add(data, pts=None):
         if data and not any(r["data"] == data for r in results):
@@ -32,90 +31,53 @@ def detect_all_qrs(image_path):
             return True
         return False
 
-    # Pass 1: Multi on full gray
-    gray, _ = _load()
-    try:
-        ret, dlist, plist, *_ = cv2.QRCodeDetector().detectAndDecodeMulti(gray)
-        if ret and dlist:
-            for data, pts in zip(dlist, plist):
-                if _add(data, pts):
-                    dbg["multi"] += 1
-    except (AttributeError, cv2.error):
-        pass
-
-    # Pass 2: Multi on thresholded
-    gray, _ = _load()
-    th = _threshold(gray)
-    try:
-        ret, dlist, plist, *_ = cv2.QRCodeDetector().detectAndDecodeMulti(th)
-        if ret and dlist:
-            for data, pts in zip(dlist, plist):
-                if _add(data, pts):
-                    dbg["multi"] += 1
-    except (AttributeError, cv2.error):
-        pass
-
-    # Pass 3: Iterative mask-and-re-Multi
-    gray, _ = _load()
-    remaining = gray.copy()
-    for _ in range(8):
+    def _run_multi(src):
         try:
-            ret, dlist, plist, *_ = cv2.QRCodeDetector().detectAndDecodeMulti(remaining)
-            if not ret or not dlist:
-                break
-            new_any = False
-            for data, pts in zip(dlist, plist):
-                if _add(data, pts):
-                    new_any = True
-                    dbg["multi"] += 1
-            if not new_any:
-                break
-            mask = np.ones_like(remaining, dtype=np.uint8) * 255
-            for pts in plist:
-                if pts is not None and len(pts) > 0:
-                    cv2.fillPoly(mask, [np.array(pts, dtype=np.int32).reshape(-1, 2)], 0)
-            remaining = cv2.bitwise_and(remaining, mask)
-        except (AttributeError, cv2.error):
-            break
-
-    # Pass 4: detectAndDecode on full image
-    gray, _ = _load()
-    data, bbox, _ = cv2.QRCodeDetector().detectAndDecode(gray)
-    if _add(data, bbox):
-        dbg["iter"] += 1
-
-    # Pass 5+6: Overlapping tiled detection (handles QRs straddling the midline)
-    gray, _ = _load()
-    h, w = gray.shape
-    # Use overlapping horizontal strips: left 70%, right 70%, center 70%
-    tile_w = int(w * 0.72)
-    for x_start in [0, max(0, w // 4), max(0, w // 2)]:
-        x_end = min(x_start + tile_w, w)
-        if x_end - x_start < 100:
-            continue
-        tile = gray[:, x_start:x_end]
-        try:
-            ret, dlist, plist, *_ = cv2.QRCodeDetector().detectAndDecodeMulti(tile)
+            ret, dlist, plist, *_ = cv2.QRCodeDetector().detectAndDecodeMulti(src)
             if ret and dlist:
+                count = 0
                 for data, pts in zip(dlist, plist):
                     if _add(data, pts):
-                        dbg["multi"] += 1
+                        count += 1
+                return count
         except (AttributeError, cv2.error):
             pass
-        try:
-            data, bbox, _ = cv2.QRCodeDetector().detectAndDecode(tile)
-            if _add(data, bbox):
-                dbg["iter"] += 1
-        except (AttributeError, cv2.error):
-            pass
+        return 0
 
-    # Pass 7: pyzbar supplement
-    gray_pil, img_pil = _load()
+    def _run_single(src):
+        try:
+            data, bbox, _ = cv2.QRCodeDetector().detectAndDecode(src)
+            if _add(data, bbox):
+                return 1
+        except (AttributeError, cv2.error):
+            pass
+        return 0
+
+    # Pass 1: Multi on full gray  (fast, basic)
+    dbg["multi"] += _run_multi(gray)
+
+    # Pass 2: Multi on thresholded (catches low-contrast QRs)
+    th = _threshold(gray)
+    dbg["multi"] += _run_multi(th)
+
+    # Pass 3: Conditional overlapping tiles (only if < 2 QRs found so far)
+    if len(results) < 2:
+        tile_w = int(w * 0.72)
+        for x_start in [0, w // 4, w // 2]:
+            x_end = min(x_start + tile_w, w)
+            if x_end - x_start < 100:
+                continue
+            tile = gray[:, x_start:x_end]
+            dbg["multi"] += _run_multi(tile)
+
+    # Pass 4: Single detect on full (quick backup)
+    dbg["iter"] += _run_single(gray)
+
+    # Pass 5: pyzbar (low priority, skip on serverless where it never works)
     if PYZBAR_AVAILABLE:
         try:
-            for img_in in (img_pil, img_pil.convert('L'), Image.fromarray(gray_pil)):
-                pyz_found = pyzbar_decode(img_in)
-                for qr in pyz_found:
+            for img_in in (img_pil, img_pil.convert('L'), Image.fromarray(gray)):
+                for qr in pyzbar_decode(img_in):
                     data_str = qr.data.decode('utf-8', errors='ignore') if isinstance(qr.data, bytes) else str(qr.data)
                     if data_str and not any(r["data"] == data_str for r in results):
                         results.append(_make_qr_obj_from_pyzbar(qr))

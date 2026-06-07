@@ -234,6 +234,11 @@ async def analyze_document(file: UploadFile = File(...)):
         images, cleaned_images = pp_result
         num_pages = len(images)
         image_pool = cleaned_images if cleaned_images else images
+        MAX_PAGES = 5
+        if num_pages > MAX_PAGES:
+            image_pool = image_pool[:MAX_PAGES]
+            num_pages = MAX_PAGES
+            logger.info(f"Session {session_id}: truncated to {MAX_PAGES} pages (had {len(images)})")
         results["analyzed_pages"] = num_pages
         logger.info(f"Session {session_id}: {num_pages} pages")
 

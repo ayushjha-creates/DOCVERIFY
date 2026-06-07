@@ -18,6 +18,8 @@ except ImportError:
     pytesseract = None
     TESSERACT_AVAILABLE = False
 
+_MAX_OCR_PX = 1200  # resize longest side to this before OCR
+
 # ── Configure bundled tesseract binary ──
 _TESS_CFG = None
 if TESSERACT_AVAILABLE:
@@ -40,6 +42,16 @@ SUSPICIOUS_KEYWORDS = [
     "edited", "modified", "altered", "tampered", "doctored",
     "copy", "paste", "replaced", "forged", "fake", "hacked",
 ]
+
+def _resize_for_ocr(img):
+    h, w = img.shape[:2]
+    longest = max(h, w)
+    if longest > _MAX_OCR_PX:
+        scale = _MAX_OCR_PX / longest
+        new_w, new_h = int(w * scale), int(h * scale)
+        return cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    return img
+
 
 def _load_image(image_path):
     img = cv2.imread(image_path)
@@ -76,6 +88,7 @@ def analyze_ocr(image_path):
 
     try:
         img = _load_image(image_path)
+        img = _resize_for_ocr(img)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
 
@@ -87,7 +100,7 @@ def analyze_ocr(image_path):
             ocr_data = pytesseract.image_to_data(
                 thresh, output_type=pytesseract.Output.DICT
             )
-            text = pytesseract.image_to_string(thresh)
+            text = " ".join([w for w in ocr_data["text"] if w.strip()])
         finally:
             if _TESS_CFG and _TESS_CFG["libdir"]:
                 if _old_ld:
