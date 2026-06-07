@@ -7,3 +7,4 @@ PyMuPDF>=1.23.0
 pytesseract>=0.3.10
 reportlab>=4.0.8
 pydantic>=2.5.0
+pyzbar>=0.1.9

@@ -1,279 +1,158 @@
+import cv2
 import numpy as np
 from PIL import Image
-import os
-import re
 import urllib.parse
+import socket
 
 try:
-    import cv2
-    CV2_AVAILABLE = True
+    from pyzbar.pyzbar import decode as pyzbar_decode
+    PYZBAR_AVAILABLE = True
 except ImportError:
-    cv2 = None
-    CV2_AVAILABLE = False
+    PYZBAR_AVAILABLE = False
+    pyzbar_decode = None
 
-TRUSTED_DOMAINS = [
-    "gov.in", "gov.sg", "gov.my", "edu", "ac.in",
-    "document-verify.com", "verify.gov"
-]
-
-SUSPICIOUS_TLDS = [".xyz", ".tk", ".ml", ".ga", ".cf", ".gq", ".top", ".loan"]
+SUSPICIOUS_TLDS = ['.xyz', '.top', '.click', '.tk', '.ml', '.ga', '.cf']
 
 
-def _finding(ftype, title, detail, points=0, severity="minor", field_location=""):
-    return {
-        "type": ftype,
-        "title": title,
-        "detail": detail,
-        "points": points,
-        "severity": severity,
-        "field_location": field_location,
-    }
-
-
-def _decode_qr_cv2(gray):
-    qr_detector = cv2.QRCodeDetector()
-    data, bbox, _ = qr_detector.detectAndDecode(gray)
-    if data:
-        return _make_qr_obj(data, bbox)
-    return None
-
-
-def _decode_multi_qr(gray):
-    try:
-        out = cv2.QRCodeDetector().detectAndDecodeMulti(gray)
-    except AttributeError:
-        return None
-    if isinstance(out, tuple):
-        ret = out[0]
-        data_list = out[1] if len(out) > 1 else []
-        bbox_list = out[2] if len(out) > 2 else []
-    else:
-        return None
-    if not ret or not data_list:
-        return None
+def detect_all_qrs(image_path):
+    img_pil = Image.open(image_path).convert('RGB')
+    img_cv = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
     results = []
-    for data, bbox in zip(data_list, bbox_list):
-        if data:
-            results.append(_make_qr_obj(data, bbox))
-    return results or None
 
-
-def _make_qr_obj(data, bbox):
-    if bbox is not None and len(bbox) > 0:
-        pts = np.array(bbox).astype(int)
-        if pts.ndim == 3:
-            pts = pts[0]
-        left = int(min(pts[:, 0]))
-        top = int(min(pts[:, 1]))
-        right = int(max(pts[:, 0]))
-        bottom = int(max(pts[:, 1]))
+    if PYZBAR_AVAILABLE:
+        found = pyzbar_decode(img_pil)
+        results.extend(found)
+        gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        found2 = pyzbar_decode(Image.fromarray(thresh))
     else:
-        left = top = right = bottom = 0
-    class MockObj:
-        pass
-    obj = MockObj()
-    obj.data = data.encode() if isinstance(data, str) else data
-    obj.type = "QRCODE"
-    rect = MockObj()
-    rect.left = left
-    rect.top = top
-    rect.width = right - left
-    rect.height = bottom - top
-    obj.rect = rect
-    return obj
+        found = _decode_qr_cv2(img_cv)
+        found2 = []
+        if found:
+            results.append(found)
 
-
-def _deduplicate_qrs(objects):
-    seen_data = set()
     unique = []
-    for obj in objects:
-        d = obj.data.decode("utf-8") if isinstance(obj.data, bytes) else obj.data
-        if d not in seen_data:
-            seen_data.add(d)
-            unique.append(obj)
+    seen_data = set()
+    for qr in results + (found2 if PYZBAR_AVAILABLE else []):
+        data_str = qr.data.decode('utf-8', errors='ignore') if isinstance(qr.data, bytes) else str(qr.data)
+        k = (data_str, qr.rect.left // 20, qr.rect.top // 20)
+        if k not in seen_data:
+            seen_data.add(k)
+            unique.append(qr)
     return unique
 
 
-def _validate_qr(obj, img_shape):
-    h, w = img_shape[:2]
-    r = obj.rect
-    area = r.width * r.height
-    img_area = h * w
-    if r.width < 15 or r.height < 15:
-        return False
-    if area > img_area * 0.8:
-        return False
-    data = obj.data.decode("utf-8") if isinstance(obj.data, bytes) else obj.data
-    if len(data) < 2:
-        return False
-    return True
+def _decode_qr_cv2(img):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    qr_detector = cv2.QRCodeDetector()
+    data, bbox, _ = qr_detector.detectAndDecode(gray)
+    if data:
+        return type('QRObj', (), {'data': data.encode(), 'type': 'QRCODE', 'rect': type('Rect', (), {'left': 0, 'top': 0, 'width': 0, 'height': 0})})()
+    return None
 
 
-def _iterative_detect(gray, max_iter=15):
-    all_objs = []
-    remaining = gray.copy()
-    for _ in range(max_iter):
-        obj = _decode_qr_cv2(remaining)
-        if obj is None:
-            break
-        all_objs.append(obj)
-        x, y, w, h = obj.rect.left, obj.rect.top, obj.rect.width, obj.rect.height
-        margin = 5
-        x = max(x - margin, 0)
-        y = max(y - margin, 0)
-        w = min(w + 2 * margin, remaining.shape[1] - x)
-        h = min(h + 2 * margin, remaining.shape[0] - y)
-        cv2.rectangle(remaining, (x, y), (x + w, y + h), (0,), -1)
-        if h < 8 or w < 8:
-            break
-    return all_objs
+def analyze_single_qr(qr, index):
+    data_str = qr.data.decode('utf-8', errors='ignore') if isinstance(qr.data, bytes) else str(qr.data)
+    result = {
+        "index": index,
+        "data": data_str,
+        "type": str(qr.type),
+        "position": {
+            "left": qr.rect.left, "top": qr.rect.top,
+            "width": qr.rect.width, "height": qr.rect.height,
+        },
+        "status": "OK",
+        "flags": [],
+        "details": "",
+    }
 
+    data = result["data"]
 
-def _find_all_qr_cv2(gray):
-    combined = []
+    if not data or len(data.strip()) == 0:
+        result["flags"].append("EMPTY_QR")
+        result["status"] = "FAIL"
+        result["details"] = f"QR #{index+1} could not be decoded or contains no data."
+        return result
 
-    multi = _decode_multi_qr(gray)
-    if multi:
-        combined.extend(multi)
+    if data.startswith("http://") or data.startswith("https://"):
+        try:
+            parsed = urllib.parse.urlparse(data)
+            domain = parsed.netloc
+            try:
+                socket.gethostbyname(domain)
+                domain_resolves = True
+            except socket.gaierror:
+                domain_resolves = False
 
-    iterative = _iterative_detect(gray)
-    for obj in iterative:
-        d = obj.data.decode("utf-8") if isinstance(obj.data, bytes) else obj.data
-        already = False
-        for existing in combined:
-            ed = existing.data.decode("utf-8") if isinstance(existing.data, bytes) else existing.data
-            if d == ed:
-                already = True
-                break
-        if not already:
-            combined.append(obj)
-
-    validated = [obj for obj in combined if _validate_qr(obj, gray.shape)]
-    return validated
-
-
-def analyze_qr_codes(image_path):
-    findings = []
-    score = 0
-    qr_codes = []
-    suspicious = False
-
-    if not CV2_AVAILABLE:
-        return {"status": "error", "score": 0, "findings": [{"type": "error", "title": "QR Unavailable", "detail": "OpenCV not available", "points": 0, "severity": "high"}], "qr_codes": []}
-
-    try:
-        img = cv2.imread(image_path)
-        if img is None:
-            img_pil = Image.open(image_path).convert("RGB")
-            img = np.array(img_pil)
-            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-        decoded_objects = _find_all_qr_cv2(gray)
-
-        if not decoded_objects:
-            findings.append(_finding(
-                "info", "No QR Codes Found",
-                "No QR codes detected in document",
-                points=0, severity="minor"
-            ))
-        else:
-            urls_found = []
-            for obj in decoded_objects:
-                data = obj.data.decode("utf-8")
-                rect = obj.rect
-                qr_info = {
-                    "data": data,
-                    "type": str(obj.type),
-                    "position": {
-                        "x": rect.left, "y": rect.top,
-                        "w": rect.width, "h": rect.height
-                    }
-                }
-                qr_codes.append(qr_info)
-
-                if data.startswith("http://") or data.startswith("https://"):
-                    urls_found.append(data)
-                    parsed = urllib.parse.urlparse(data)
-                    domain = parsed.netloc.lower()
-
-                    trusted = any(domain.endswith(td) for td in TRUSTED_DOMAINS)
-                    suspicious_tld = any(domain.endswith(tld) for tld in SUSPICIOUS_TLDS)
-                    is_ip = bool(re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', domain))
-
-                    if not trusted:
-                        if suspicious_tld:
-                            findings.append(_finding(
-                                "warning", "Suspicious QR Domain",
-                                f"QR code links to suspicious TLD: {domain}",
-                                points=15, severity="high"
-                            ))
-                            suspicious = True
-                            score -= 15
-                        elif is_ip:
-                            findings.append(_finding(
-                                "warning", "QR Links to IP Address",
-                                f"QR code links directly to IP: {domain}",
-                                points=10, severity="medium"
-                            ))
-                            suspicious = True
-                            score -= 10
-                        else:
-                            findings.append(_finding(
-                                "warning", "Unverified QR Domain",
-                                f"QR code links to unverified domain: {domain}",
-                                points=5, severity="medium"
-                            ))
-                            score -= 5
-                    else:
-                        findings.append(_finding(
-                            "info", "Trusted QR Domain",
-                            f"QR code links to trusted domain: {domain}",
-                            points=0, severity="minor"
-                        ))
+            if not domain_resolves:
+                result["flags"].append("DEAD_LINK")
+                result["status"] = "FAIL"
+                result["details"] = f"QR #{index+1} links to '{domain}' which does not resolve. Dead links on official documents indicate a forged or outdated QR."
+            else:
+                if any(domain.endswith(t) for t in SUSPICIOUS_TLDS):
+                    result["flags"].append("SUSPICIOUS_DOMAIN")
+                    result["status"] = "WARN"
+                    result["details"] = f"QR #{index+1} links to '{domain}' which uses a TLD associated with free/spam domains."
                 else:
-                    non_url_data = data[:50] + "..." if len(data) > 50 else data
-                    findings.append(_finding(
-                        "info", "QR Code Found",
-                        f"Content: {non_url_data}",
-                        points=0, severity="minor"
-                    ))
+                    result["status"] = "OK"
+                    result["details"] = f"QR #{index+1} decoded successfully. URL '{data[:60]}' resolves to a valid domain."
+        except Exception as e:
+            result["flags"].append("URL_PARSE_ERROR")
+            result["status"] = "WARN"
+            result["details"] = f"QR #{index+1} URL could not be parsed: {e}"
+    else:
+        result["status"] = "OK"
+        result["details"] = f"QR #{index+1} contains non-URL data: '{data[:80]}'. No domain verification needed."
 
-            if len(qr_codes) > 3:
-                findings.append(_finding(
-                    "warning", "Multiple QR Codes",
-                    f"Found {len(qr_codes)} QR codes — unusually high count",
-                    points=5, severity="medium"
-                ))
-                suspicious = True
-                score -= 5
+    return result
 
-            data_strings = [q["data"] for q in qr_codes]
-            if len(data_strings) != len(set(data_strings)):
-                findings.append(_finding(
-                    "warning", "Duplicate QR Codes",
-                    "Duplicate QR codes detected in document",
-                    points=10, severity="high"
-                ))
-                suspicious = True
-                score -= 10
 
-    except Exception as e:
-        findings.append(_finding(
-            "warning", "QR Analysis Error",
-            f"Could not analyze QR codes: {str(e)}",
-            points=5, severity="medium"
-        ))
-        suspicious = True
-        score -= 5
+def analyse_qr(file_path):
+    all_qrs = detect_all_qrs(file_path)
 
-    status = "suspicious" if suspicious else "clean"
-    final_score = max(score, -40)
+    if len(all_qrs) == 0:
+        return {
+            "status": "OK",
+            "deduction": 0,
+            "qr_count": 0,
+            "details": "No QR code detected in this document. This is normal for many document types.",
+            "individual_results": [],
+            "flags": [],
+        }
+
+    individual = []
+    for i, qr in enumerate(all_qrs):
+        individual.append(analyze_single_qr(qr, i))
+
+    all_data = [r["data"] for r in individual]
+    global_flags = []
+    if len(set(all_data)) < len(all_data):
+        global_flags.append("DUPLICATE_QR_DATA")
+
+    statuses = [r["status"] for r in individual]
+
+    if "FAIL" in statuses:
+        overall_status = "FAIL"
+        deduction = 30
+    elif "WARN" in statuses or global_flags:
+        overall_status = "WARN"
+        deduction = 15
+    else:
+        overall_status = "OK"
+        deduction = 0
+
+    summary_parts = []
+    for r in individual:
+        summary_parts.append(f"QR {r['index']+1}: {r['status']} -- {r['details']}")
+    summary = " | ".join(summary_parts)
+    if global_flags:
+        summary += " DUPLICATE QR DATA DETECTED."
 
     return {
-        "status": status,
-        "score": final_score,
-        "findings": findings,
-        "qr_codes": qr_codes
+        "status": overall_status,
+        "deduction": deduction,
+        "qr_count": len(all_qrs),
+        "details": summary,
+        "individual_results": individual,
+        "flags": global_flags,
     }

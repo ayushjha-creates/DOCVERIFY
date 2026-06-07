@@ -266,12 +266,10 @@ async def analyze_document(file: UploadFile = File(...)):
             # QR
             try:
                 qr_mod = importlib.import_module("modules.qr_analysis")
-                qr_r = qr_mod.analyze_qr_codes(page_img)
+                qr_r = qr_mod.analyse_qr(page_img)
             except Exception as e:
-                qr_r = {"status": "error", "score": 0, "findings": [{"type": "error", "title": "QR unavailable", "detail": str(e), "points": 0, "severity": "high", "page": page_num}]}
+                qr_r = {"status": "FAIL", "deduction": 30, "qr_count": 0, "details": f"QR analysis error: {e}", "individual_results": [], "flags": []}
             if qr_r:
-                for ff in qr_r.get("findings", []):
-                    ff["page"] = page_num
                 all_qr.append(qr_r)
 
             # Tampering
@@ -317,42 +315,78 @@ async def analyze_document(file: UploadFile = File(...)):
                 merged.extend(r.get("findings", []))
             return merged
 
-        results["ocr"] = {
-            "status": "error" if any(r.get("status") == "error" for r in all_ocr) else
-                      "suspicious" if any(r.get("status") == "suspicious" for r in all_ocr) else "clean",
-            "score": worst_of(all_ocr), "findings": all_findings(all_ocr),
-        }
-        results["qr"] = {
-            "status": "error" if any(r.get("status") == "error" for r in all_qr) else
-                      "suspicious" if any(r.get("status") == "suspicious" for r in all_qr) else "clean",
-            "score": worst_of(all_qr), "findings": all_findings(all_qr),
-        }
-        results["tampering"] = {
-            "status": "error" if any(r.get("status") == "error" for r in all_tampering) else
-                      "tampered" if any(r.get("status") == "tampered" for r in all_tampering) else
-                      "suspicious" if any(r.get("status") == "suspicious" for r in all_tampering) else "clean",
-            "score": worst_of(all_tampering), "findings": all_findings(all_tampering),
-        }
-        results["signature"] = {
-            "status": "error" if any(r.get("status") == "error" for r in all_signature) else
-                      "no_signature" if all(r.get("status") == "no_signature" for r in all_signature) else
-                      "suspicious" if any(r.get("status") == "suspicious" for r in all_signature) else "signature_detected",
-            "score": worst_of(all_signature), "findings": all_findings(all_signature),
-            "signatures_count": sum(r.get("signatures_count", 0) for r in all_signature),
-            "signature_details": sig_details_all,
+        def _worst_engine_status(results_list):
+            if not results_list:
+                return "OK"
+            for r in results_list:
+                s = r.get("status", "")
+                if s in ("tampered", "fail", "error"):
+                    return "FAIL"
+            for r in results_list:
+                s = r.get("status", "")
+                if s in ("suspicious", "warn"):
+                    return "WARN"
+            return "OK"
+
+        # ── Build normalized engine_results for scoring ──
+        engine_results = {}
+
+        meta_score = meta_result.get("score", 0) if meta_result else 0
+        engine_results["metadata"] = {
+            "status": meta_result.get("status", "OK"),
+            "deduction": min(abs(meta_score), 20) if meta_score < 0 else 0,
         }
 
+        ocr_agg_status = _worst_engine_status(all_ocr)
+        ocr_agg_score = worst_of(all_ocr)
+        engine_results["ocr"] = {
+            "status": ocr_agg_status,
+            "deduction": min(abs(ocr_agg_score), 20) if ocr_agg_score < 0 else 0,
+        }
+
+        qr_agg_status = "OK"
+        qr_agg_deduct = 0
+        all_qr_details = []
+        if all_qr:
+            status_rank = {"OK": 0, "WARN": 1, "FAIL": 2}
+            worst = max(all_qr, key=lambda r: status_rank.get(r.get("status", "OK"), 0))
+            qr_agg_status = worst.get("status", "OK")
+            qr_agg_deduct = max(r.get("deduction", 0) for r in all_qr)
+            for r in all_qr:
+                all_qr_details.extend(r.get("individual_results", []))
+        engine_results["qr"] = {"status": qr_agg_status, "deduction": qr_agg_deduct}
+
+        tamper_agg_status = _worst_engine_status(all_tampering)
+        tamper_agg_score = worst_of(all_tampering)
+        engine_results["tamper"] = {
+            "status": tamper_agg_status,
+            "deduction": min(abs(tamper_agg_score), 35) if tamper_agg_score < 0 else 0,
+        }
+
+        sig_agg_status = _worst_engine_status(all_signature)
+        sig_agg_score = worst_of(all_signature)
+        if sig_agg_status == "OK" and all(r.get("status") == "no_signature" for r in all_signature):
+            sig_agg_status = "OK"
+        engine_results["signature"] = {
+            "status": sig_agg_status,
+            "deduction": min(abs(sig_agg_score), 15) if sig_agg_score < 0 else 0,
+        }
+
+        has_duplicate = any("DUPLICATE_QR_DATA" in r.get("flags", []) for r in all_qr)
+
         findings["ocr"] = all_findings(all_ocr)
-        findings["qr"] = all_findings(all_qr)
         findings["tampering"] = all_findings(all_tampering)
         findings["signature"] = all_findings(all_signature)
 
         # Scoring
         try:
             score_mod = importlib.import_module("modules.scoring")
-            score_result = score_mod.calculate_score(results)
+            score_result = score_mod.calculate_final_score(engine_results, has_duplicate)
         except Exception as e:
-            score_result = {"score": 0, "status": "error", "reasons": [f"Scoring error: {e}"], "deductions": {}}
+            print(f"[scoring] Error: {e}", flush=True)
+            import traceback as tb
+            tb.print_exc()
+            score_result = {"score": 0, "verdict": "TAMPERED", "breakdown": {}}
         results["scoring"] = score_result
 
         # Blockchain
@@ -380,17 +414,18 @@ async def analyze_document(file: UploadFile = File(...)):
             "filename": file.filename,
             "results": {
                 "analyzed_pages": num_pages,
-                "score": results["scoring"].get("score", 0),
-                "status": results["scoring"].get("status", "error"),
-                "reasons": results["scoring"].get("reasons", []),
-                "deductions": results["scoring"].get("deductions", {}),
-                "metadata_status": results["metadata"].get("status", "error"),
-                "ocr_status": results["ocr"]["status"],
-                "qr_status": results["qr"]["status"],
-                "tampering_status": results["tampering"]["status"],
-                "signature_status": results["signature"]["status"],
-                "signature_count": results["signature"].get("signatures_count", 0),
-                "signature_details": results["signature"].get("signature_details", []),
+                "score": score_result.get("score", 0),
+                "status": score_result.get("verdict", "TAMPERED"),
+                "breakdown": score_result.get("breakdown", {}),
+                "engine_statuses": {k: v["status"] for k, v in engine_results.items()},
+                "metadata_status": engine_results["metadata"]["status"],
+                "ocr_status": engine_results["ocr"]["status"],
+                "qr_status": engine_results["qr"]["status"],
+                "tampering_status": engine_results["tamper"]["status"],
+                "signature_status": engine_results["signature"]["status"],
+                "signature_count": sum(r.get("signatures_count", 0) for r in all_signature),
+                "signature_details": sig_details_all,
+                "qr_details": all_qr_details,
                 "findings": findings,
                 "blockchain": results["blockchain"],
                 "report_b64": report_b64,
