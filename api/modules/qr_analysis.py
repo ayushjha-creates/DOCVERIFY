@@ -38,10 +38,12 @@ def detect_all_qrs(image_path):
     remaining = gray.copy()
     for _ in range(15):
         data, bbox, _ = cv2.QRCodeDetector().detectAndDecode(remaining)
-        if not data or any(r["data"] == data for r in results):
+        if not data:
             break
-        results.append(_make_qr_obj_from_cv(data, bbox))
-        dbg["iter"] += 1
+        already = any(r["data"] == data for r in results)
+        if not already:
+            results.append(_make_qr_obj_from_cv(data, bbox))
+            dbg["iter"] += 1
         if bbox is not None and len(bbox) > 0:
             pts = np.array(bbox[0]).astype(int)
             margin = 10
