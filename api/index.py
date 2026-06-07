@@ -7,6 +7,7 @@ import io
 import traceback
 import shutil
 import datetime
+import time
 import logging
 import subprocess
 
@@ -15,6 +16,8 @@ sys.path.insert(0, _api_dir)
 
 # ── Auto-install missing packages at cold start ──
 def _ensure_deps():
+    _t0 = time.monotonic()
+    _MAX_TOTAL = 8.0
     req_file = os.path.join(_api_dir, "requirements.txt")
     if not os.path.exists(req_file):
         return
@@ -27,31 +30,74 @@ def _ensure_deps():
             missing.append(mod)
     if not missing:
         return
-    uv_path = os.path.join(_api_dir, "_uv")
-    if os.path.isdir(uv_path):
-        uv_bin = os.path.join(uv_path, "uv")
-        if not os.path.isfile(uv_bin):
+    if time.monotonic() - _t0 > _MAX_TOTAL:
+        return
+
+    target_dir = "/tmp/docverify_packages"
+    os.makedirs(target_dir, exist_ok=True)
+    if target_dir not in sys.path:
+        sys.path.insert(0, target_dir)
+    os.environ.setdefault("PYTHONPATH", "")
+    if target_dir not in os.environ["PYTHONPATH"]:
+        os.environ["PYTHONPATH"] = f"{target_dir}:{os.environ['PYTHONPATH']}"
+    print(f"[deps] Missing: {missing}. Installing to {target_dir}...", flush=True)
+
+    install_ok = False
+
+    # Try uv first
+    if time.monotonic() - _t0 < _MAX_TOTAL:
+        uv_path = os.path.join(_api_dir, "_uv")
+        if os.path.isdir(uv_path):
+            uv_bin = None
             for root, dirs, files in os.walk(uv_path):
                 for f in files:
                     if f == "uv":
                         uv_bin = os.path.join(root, f)
                         break
-        if os.path.isfile(uv_bin):
+            if uv_bin and os.path.isfile(uv_bin):
+                remaining = max(1, int(_MAX_TOTAL - (time.monotonic() - _t0)))
+                try:
+                    r = subprocess.run(
+                        [uv_bin, "pip", "install", "--target", target_dir, "-r", req_file],
+                        capture_output=True, text=True, timeout=remaining
+                    )
+                    if r.returncode == 0:
+                        print(f"[deps] uv install OK", flush=True)
+                        install_ok = True
+                    else:
+                        print(f"[deps] uv failed: {r.stderr[-200:]}", flush=True)
+                except subprocess.TimeoutExpired:
+                    print(f"[deps] uv install timed out", flush=True)
+                except Exception as e:
+                    print(f"[deps] uv error: {e}", flush=True)
+
+    # Fallback: pip
+    if not install_ok and time.monotonic() - _t0 < _MAX_TOTAL:
+        remaining = max(1, int(_MAX_TOTAL - (time.monotonic() - _t0)))
+        try:
+            r = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--target", target_dir,
+                 "-r", req_file],
+                capture_output=True, text=True, timeout=remaining
+            )
+            if r.returncode == 0:
+                print(f"[deps] pip install OK", flush=True)
+                install_ok = True
+            else:
+                print(f"[deps] pip failed: {r.stderr[-200:]}", flush=True)
+        except subprocess.TimeoutExpired:
+            print(f"[deps] pip install timed out", flush=True)
+        except Exception as e:
+            print(f"[deps] pip error: {e}", flush=True)
+
+    if install_ok:
+        import importlib
+        for mod in missing:
             try:
-                subprocess.run(
-                    [uv_bin, "pip", "install", "-r", req_file, "--quiet"],
-                    capture_output=True, timeout=120
-                )
-            except Exception:
-                pass
-    # Fallback: try pip directly
-    try:
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "-r", req_file, "--quiet"],
-            capture_output=True, timeout=120
-        )
-    except Exception:
-        pass
+                importlib.import_module(mod)
+                print(f"[deps] {mod} now available", flush=True)
+            except Exception as e:
+                print(f"[deps] {mod} still failing: {e}", flush=True)
 
 _ensure_deps()
 
