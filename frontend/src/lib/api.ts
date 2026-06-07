@@ -80,3 +80,7 @@ export function getReportUrl(sessionId: string): string {
 export function getPreviewUrl(sessionId: string): string {
   return `${API_BASE}/api/temp/${sessionId}/preview.png`;
 }
+
+export function getMarkedImageUrl(sessionId: string): string {
+  return `${API_BASE}/api/temp/${sessionId}/marked.png`;
+}

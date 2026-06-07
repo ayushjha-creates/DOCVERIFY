@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { analyzeDocument, AnalysisResult } from "@/lib/api";
+import { analyzeDocument, AnalysisResult, getPreviewUrl, getMarkedImageUrl } from "@/lib/api";
 
 type AppState = "welcome" | "uploaded" | "analyzing" | "results";
 
@@ -70,9 +70,9 @@ export default function Home() {
         setResult(res);
         setState("results");
       }, 500);
-    } catch (err: any) {
+    } catch (err: unknown) {
       clearInterval(interval);
-      setError(err.message || "Analysis failed");
+      setError(err instanceof Error ? err.message : "Analysis failed");
       setState("uploaded");
       setAnalyzing(false);
     }
@@ -106,12 +106,14 @@ export default function Home() {
           text: `Document authenticity score: ${result.results.score}% - ${result.results.status}`,
           url: window.location.href,
         });
-      } catch {}
+      } catch { /* ignore */ }
     } else {
       await navigator.clipboard.writeText(window.location.href);
       alert("Link copied to clipboard!");
     }
   }, [result]);
+
+  const r = result?.results;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30">
@@ -148,9 +150,6 @@ export default function Home() {
               <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
                 Verify Document Authenticity with AI
               </p>
-              <p className="text-sm text-muted-foreground/70 mt-3 max-w-lg mx-auto">
-                Upload certificates, receipts, invoices, or any document. Our AI detects tampering using advanced forensic analysis.
-              </p>
             </div>
             <UploadSection onFileSelect={handleFileSelect} />
             <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-3xl">
@@ -158,11 +157,11 @@ export default function Home() {
                 { icon: "🔍", title: "Multi-Layer Forensics", desc: "5 parallel analysis engines check every aspect of your document" },
                 { icon: "⚡", title: "Real-Time Results", desc: "Get comprehensive analysis with authenticity score in seconds" },
                 { icon: "🔗", title: "Blockchain Verified", desc: "Document hash stored for tamper-proof verification" },
-              ].map((feature) => (
-                <div key={feature.title} className="text-center p-6 rounded-xl border bg-card/50 hover:bg-card transition-colors">
-                  <span className="text-3xl mb-3 block">{feature.icon}</span>
-                  <h3 className="font-semibold mb-2">{feature.title}</h3>
-                  <p className="text-sm text-muted-foreground">{feature.desc}</p>
+              ].map((f) => (
+                <div key={f.title} className="text-center p-6 rounded-xl border bg-card/50 hover:bg-card transition-colors">
+                  <span className="text-3xl mb-3 block">{f.icon}</span>
+                  <h3 className="font-semibold mb-2">{f.title}</h3>
+                  <p className="text-sm text-muted-foreground">{f.desc}</p>
                 </div>
               ))}
             </div>
@@ -234,26 +233,26 @@ export default function Home() {
                 { p: 70, label: "Tampering", msg: "Running ELA & forensic checks" },
                 { p: 85, label: "Signatures", msg: "Analyzing stamps & signatures" },
                 { p: 95, label: "Scoring", msg: "Computing final score" },
-              ].map((step) => (
-                <div key={step.label} className="flex items-center gap-3">
+              ].map((s) => (
+                <div key={s.label} className="flex items-center gap-3">
                   <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
-                    progress >= step.p
+                    progress >= s.p
                       ? "bg-primary text-primary-foreground"
                       : "bg-muted text-muted-foreground"
                   }`}>
-                    {progress >= step.p ? (
+                    {progress >= s.p ? (
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                       </svg>
                     ) : (
-                      <span className="text-xs font-medium">{step.p / 10}</span>
+                      <span className="text-xs font-medium">{s.p / 10}</span>
                     )}
                   </div>
                   <div className="flex-1">
-                    <p className={`text-sm font-medium ${progress >= step.p ? "text-foreground" : "text-muted-foreground"}`}>
-                      {step.label}
+                    <p className={`text-sm font-medium ${progress >= s.p ? "text-foreground" : "text-muted-foreground"}`}>
+                      {s.label}
                     </p>
-                    <p className="text-xs text-muted-foreground/70">{step.msg}</p>
+                    <p className="text-xs text-muted-foreground/70">{s.msg}</p>
                   </div>
                 </div>
               ))}
@@ -261,14 +260,14 @@ export default function Home() {
           </div>
         )}
 
-        {state === "results" && result && (
+        {state === "results" && r && (
           <div className="space-y-8 pb-16">
             <div className="text-center pt-4">
               <h1 className="text-3xl font-bold mb-2">Analysis Complete</h1>
               <p className="text-muted-foreground">{result.filename}</p>
-              {result.results.analyzed_pages > 1 && (
+              {r.analyzed_pages > 1 && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  Analyzed {result.results.analyzed_pages} pages
+                  Analyzed {r.analyzed_pages} pages
                 </p>
               )}
               <div className="mt-4">
@@ -291,28 +290,28 @@ export default function Home() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-1">
                 <div className="rounded-xl border bg-card p-6 sticky top-20">
-                  <ScoreGauge score={result.results.score} />
+                  <ScoreGauge score={r.score} />
                   <Separator className="my-6" />
                   <div className="space-y-4">
                     <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">Deductions</h3>
-                    {Object.entries(result.results.deductions).map(([key, val]) => (
-                      <div key={key} className="flex items-center justify-between text-sm">
+                    {Object.entries(r.deductions).map(([k, v]) => (
+                      <div key={k} className="flex items-center justify-between text-sm">
                         <span className="capitalize text-muted-foreground">
-                          {key === "metadata" ? "Metadata" :
-                           key === "ocr" ? "OCR / Text" :
-                           key === "qr" ? "QR Codes" :
-                           key === "tampering" ? "Tampering" :
-                           key === "signature" ? "Signature" : key}
+                          {k === "metadata" ? "Metadata" :
+                           k === "ocr" ? "OCR / Text" :
+                           k === "qr" ? "QR Codes" :
+                           k === "tampering" ? "Tampering" :
+                           k === "signature" ? "Signature" : k}
                         </span>
-                        <span className={val > 0 ? "text-destructive font-medium" : "text-green-500 font-medium"}>
-                          {val > 0 ? `-${val}` : "0"}
+                        <span className={v > 0 ? "text-destructive font-medium" : "text-green-500 font-medium"}>
+                          {v > 0 ? `-${v}` : "0"}
                         </span>
                       </div>
                     ))}
                     <Separator />
                     <div className="flex items-center justify-between text-sm font-bold">
                       <span>Total Deduction</span>
-                      <span className="text-destructive">-{result.results.reasons.length > 0 ? Object.values(result.results.deductions).reduce((a, b) => a + b, 0) : 0}</span>
+                      <span className="text-destructive">-{r.reasons.length > 0 ? Object.values(r.deductions).reduce((a, b) => a + b, 0) : 0}</span>
                     </div>
                   </div>
                   <Separator className="my-6" />
@@ -324,34 +323,33 @@ export default function Home() {
                       ["qr", "QR Codes"],
                       ["tampering", "Tampering"],
                       ["signature", "Signature"],
-                    ] as const).map(([key, label]) => (
-                      <div key={key} className="flex items-center justify-between text-sm">
-                        <span>{label}</span>
-                        {(() => {
-                          const status = result.results[`${key}_status` as keyof typeof result.results] as string;
-                          const isPassed = !["suspicious", "tampered", "error"].includes(status);
-                          return (
-                            <Badge
-                              variant={isPassed ? "outline" : "destructive"}
-                              className={isPassed ? "text-green-600 border-green-600" : undefined}
-                            >
-                              {isPassed ? "Passed" : "Issues"}
-                            </Badge>
-                          );
-                        })()}
-                      </div>
-                    ))}
+                    ] as const).map(([key, label]) => {
+                      const statusKey = `${key}_status` as keyof typeof r;
+                      const status = r[statusKey] as string;
+                      const isPassed = !["suspicious", "tampered", "error"].includes(status);
+                      return (
+                        <div key={key} className="flex items-center justify-between text-sm">
+                          <span>{label}</span>
+                          <Badge
+                            variant={isPassed ? "outline" : "destructive"}
+                            className={isPassed ? "text-green-600 border-green-600" : undefined}
+                          >
+                            {isPassed ? "Passed" : "Issues"}
+                          </Badge>
+                        </div>
+                      );
+                    })}
                   </div>
-                  {result.results.blockchain && (
+                  {r.blockchain && (
                     <>
                       <Separator className="my-6" />
                       <div className="space-y-2">
                         <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">Blockchain</h3>
                         <div className="text-xs text-muted-foreground space-y-1">
-                          <p className="truncate font-mono">Hash: {result.results.blockchain.blockchain_hash.slice(0, 20)}...</p>
-                          <p>Block #{result.results.blockchain.block_number}</p>
+                          <p className="truncate font-mono">Hash: {r.blockchain.blockchain_hash.slice(0, 20)}...</p>
+                          <p>Block #{r.blockchain.block_number}</p>
                           <a
-                            href={result.results.blockchain.verification_url}
+                            href={r.blockchain.verification_url}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-primary hover:underline inline-flex items-center gap-1"
@@ -370,19 +368,19 @@ export default function Home() {
 
               <div className="lg:col-span-2 space-y-8">
                 <VisualEvidence
-                  previewB64={result.results.preview_b64}
-                  markedImages={result.results.marked_images}
-                  signatureImages={result.results.signature_images}
-                  signatureCount={result.results.signature_count}
-                  analyzedPages={result.results.analyzed_pages}
+                  previewB64={r.preview_b64}
+                  markedImages={r.marked_images ?? undefined}
+                  signatureImages={r.signature_images ?? undefined}
+                  signatureCount={r.signature_count}
+                  analyzedPages={r.analyzed_pages}
                 />
 
                 <div className="rounded-xl border bg-card p-6">
                   <h2 className="text-xl font-semibold mb-6">Findings & Evidence</h2>
                   <ScrollArea className="max-h-[600px] pr-4">
                     <DetailedReport
-                      findings={result.results.findings}
-                      deductions={result.results.deductions}
+                      findings={r.findings}
+                      deductions={r.deductions}
                     />
                   </ScrollArea>
                 </div>
@@ -391,7 +389,7 @@ export default function Home() {
 
             <Separator />
             <ResultActions
-              reportB64={result.results.report_b64}
+              reportB64={r.report_b64}
               filename={result.filename}
               onReset={handleReset}
               onShare={handleShare}
