@@ -1,1 +1,2 @@
-api/bin
+# Only exclude large tessdata files we don't need
+api/bin/tessdata/deu.traineddata

@@ -33,47 +33,66 @@ def _finding(ftype, title, detail, points=0, severity="minor", field_location=""
 def _decode_qr_cv2(gray):
     qr_detector = cv2.QRCodeDetector()
     data, bbox, _ = qr_detector.detectAndDecode(gray)
-    results = []
     if data:
-        if bbox is not None and len(bbox) > 0:
-            pts = bbox[0].astype(int)
-            left = int(min(pts[:, 0]))
-            top = int(min(pts[:, 1]))
-            right = int(max(pts[:, 0]))
-            bottom = int(max(pts[:, 1]))
-        else:
-            left = top = right = bottom = 0
-        class MockObj:
-            pass
-        obj = MockObj()
-        obj.data = data.encode()
-        obj.type = "QRCODE"
-        rect = MockObj()
-        rect.left = left
-        rect.top = top
-        rect.width = right - left
-        rect.height = bottom - top
-        obj.rect = rect
-        results.append(obj)
+        return _make_qr_obj(data, bbox)
+    return None
 
-    return results
+
+def _decode_multi_qr(gray):
+    try:
+        ret, data_list, bbox_list = cv2.QRCodeDetector().detectAndDecodeMulti(gray)
+    except AttributeError:
+        return None
+    if not ret or not data_list:
+        return None
+    results = []
+    for data, bbox in zip(data_list, bbox_list):
+        if data:
+            results.append(_make_qr_obj(data, bbox))
+    return results or None
+
+
+def _make_qr_obj(data, bbox):
+    if bbox is not None and len(bbox) > 0:
+        pts = np.array(bbox).astype(int)
+        if pts.ndim == 3:
+            pts = pts[0]
+        left = int(min(pts[:, 0]))
+        top = int(min(pts[:, 1]))
+        right = int(max(pts[:, 0]))
+        bottom = int(max(pts[:, 1]))
+    else:
+        left = top = right = bottom = 0
+    class MockObj:
+        pass
+    obj = MockObj()
+    obj.data = data.encode() if isinstance(data, str) else data
+    obj.type = "QRCODE"
+    rect = MockObj()
+    rect.left = left
+    rect.top = top
+    rect.width = right - left
+    rect.height = bottom - top
+    obj.rect = rect
+    return obj
 
 
 def _find_all_qr_cv2(gray):
+    results = _decode_multi_qr(gray)
+    if results is not None:
+        return results
     all_objs = []
     remaining = gray.copy()
-    max_iter = 20
-    for _ in range(max_iter):
-        objs = _decode_qr_cv2(remaining)
-        if not objs:
+    for _ in range(10):
+        obj = _decode_qr_cv2(remaining)
+        if obj is None:
             break
-        obj = objs[0]
         all_objs.append(obj)
         x, y, w, h = obj.rect.left, obj.rect.top, obj.rect.width, obj.rect.height
-        x = max(x - 5, 0)
-        y = max(y - 5, 0)
-        w = min(w + 10, remaining.shape[1] - x)
-        h = min(h + 10, remaining.shape[0] - y)
+        x = max(x - 10, 0)
+        y = max(y - 10, 0)
+        w = min(w + 20, remaining.shape[1] - x)
+        h = min(h + 20, remaining.shape[0] - y)
         cv2.rectangle(remaining, (x, y), (x + w, y + h), (0,), -1)
         if h < 10 or w < 10:
             break

@@ -1,3 +1,4 @@
+import os
 import re
 from collections import defaultdict
 from PIL import Image
@@ -16,6 +17,24 @@ try:
 except ImportError:
     pytesseract = None
     TESSERACT_AVAILABLE = False
+
+# ── Configure bundled tesseract binary ──
+_TESS_CFG = None
+if TESSERACT_AVAILABLE:
+    _ocr_dir = os.path.dirname(os.path.abspath(__file__))
+    _api_dir = os.path.dirname(_ocr_dir)
+    _tess_bin = os.path.join(_api_dir, "bin", "tesseract")
+    if os.path.exists(_tess_bin):
+        _tessdata = os.path.join(_api_dir, "bin", "tessdata")
+        _lib_dir = os.path.join(_api_dir, "bin", "lib")
+        _TESS_CFG = {
+            "cmd": _tess_bin,
+            "tessdata": _tessdata if os.path.isdir(_tessdata) else None,
+            "libdir": _lib_dir if os.path.isdir(_lib_dir) else None,
+        }
+        pytesseract.pytesseract.tesseract_cmd = _tess_bin
+        if _TESS_CFG["tessdata"]:
+            os.environ.setdefault("TESSDATA_PREFIX", _TESS_CFG["tessdata"])
 
 SUSPICIOUS_KEYWORDS = [
     "edited", "modified", "altered", "tampered", "doctored",
@@ -60,10 +79,21 @@ def analyze_ocr(image_path):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
 
-        ocr_data = pytesseract.image_to_data(
-            thresh, output_type=pytesseract.Output.DICT
-        )
-        text = pytesseract.image_to_string(thresh)
+        # Set LD_LIBRARY_PATH for tesseract subprocess only
+        _old_ld = os.environ.get("LD_LIBRARY_PATH", "")
+        if _TESS_CFG and _TESS_CFG["libdir"]:
+            os.environ["LD_LIBRARY_PATH"] = f"{_TESS_CFG['libdir']}:{_old_ld}"
+        try:
+            ocr_data = pytesseract.image_to_data(
+                thresh, output_type=pytesseract.Output.DICT
+            )
+            text = pytesseract.image_to_string(thresh)
+        finally:
+            if _TESS_CFG and _TESS_CFG["libdir"]:
+                if _old_ld:
+                    os.environ["LD_LIBRARY_PATH"] = _old_ld
+                else:
+                    os.environ.pop("LD_LIBRARY_PATH", None)
         words = [w for w in ocr_data["text"] if w.strip()]
 
         if not words:

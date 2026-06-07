@@ -78,7 +78,7 @@ def calculate_score(results):
             deduction = min(abs(raw), fail_pts)
         elif severity == "warn":
             warn_count += 1
-            deduction = min(abs(raw), fail_pts)
+            deduction = min(abs(raw), warn_pts)
         elif raw < 0:
             deduction = min(abs(raw), warn_pts)
         else:
