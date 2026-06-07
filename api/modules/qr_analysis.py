@@ -15,47 +15,106 @@ SUSPICIOUS_TLDS = ['.xyz', '.top', '.click', '.tk', '.ml', '.ga', '.cf']
 
 
 def detect_all_qrs(image_path):
-    img_pil = Image.open(image_path).convert('RGB')
-    img_cv = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
-    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
     results = []
-    h, w = gray.shape
-    dbg = {"img_size": f"{w}x{h}", "multi": 0, "iter": 0, "pyzbar": 0}
+    dbg = {"img_size": "?", "multi": 0, "iter": 0, "pyzbar": 0}
 
-    # Try all methods on the FULL image first, each with its own detector instance
-    for attempt, src in [("gray", gray), ("thresh", _threshold(gray))]:
+    def _load():
+        img = Image.open(image_path).convert('RGB')
+        cvimg = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        g = cv2.cvtColor(cvimg, cv2.COLOR_BGR2GRAY)
+        h, w = g.shape
+        dbg["img_size"] = f"{w}x{h}"
+        return g, img
+
+    def _add(data, pts=None):
+        if data and not any(r["data"] == data for r in results):
+            results.append(_make_qr_obj_from_cv(data, pts))
+            return True
+        return False
+
+    # Pass 1: Multi on full gray
+    gray, _ = _load()
+    try:
+        ret, dlist, plist, *_ = cv2.QRCodeDetector().detectAndDecodeMulti(gray)
+        if ret and dlist:
+            for data, pts in zip(dlist, plist):
+                if _add(data, pts):
+                    dbg["multi"] += 1
+    except (AttributeError, cv2.error):
+        pass
+
+    # Pass 2: Multi on thresholded
+    gray, _ = _load()
+    th = _threshold(gray)
+    try:
+        ret, dlist, plist, *_ = cv2.QRCodeDetector().detectAndDecodeMulti(th)
+        if ret and dlist:
+            for data, pts in zip(dlist, plist):
+                if _add(data, pts):
+                    dbg["multi"] += 1
+    except (AttributeError, cv2.error):
+        pass
+
+    # Pass 3: Iterative mask-and-re-Multi
+    gray, _ = _load()
+    remaining = gray.copy()
+    for _ in range(8):
         try:
-            ret, data_list, pts_list, *_ = cv2.QRCodeDetector().detectAndDecodeMulti(src)
-            if ret and data_list:
-                for data, pts in zip(data_list, pts_list):
-                    if data and not any(r["data"] == data for r in results):
-                        results.append(_make_qr_obj_from_cv(data, pts))
+            ret, dlist, plist, *_ = cv2.QRCodeDetector().detectAndDecodeMulti(remaining)
+            if not ret or not dlist:
+                break
+            new_any = False
+            for data, pts in zip(dlist, plist):
+                if _add(data, pts):
+                    new_any = True
+                    dbg["multi"] += 1
+            if not new_any:
+                break
+            mask = np.ones_like(remaining, dtype=np.uint8) * 255
+            for pts in plist:
+                if pts is not None and len(pts) > 0:
+                    cv2.fillPoly(mask, [np.array(pts, dtype=np.int32).reshape(-1, 2)], 0)
+            remaining = cv2.bitwise_and(remaining, mask)
+        except (AttributeError, cv2.error):
+            break
+
+    # Pass 4: detectAndDecode on full image
+    gray, _ = _load()
+    data, bbox, _ = cv2.QRCodeDetector().detectAndDecode(gray)
+    if _add(data, bbox):
+        dbg["iter"] += 1
+
+    # Pass 5: Tiled detectAndDecodeMulti (left/right halves)
+    gray, _ = _load()
+    h, w = gray.shape
+    for tile, offset_x in [(gray[:, :w//2], 0), (gray[:, w//2:], w//2)]:
+        try:
+            ret, dlist, plist, *_ = cv2.QRCodeDetector().detectAndDecodeMulti(tile)
+            if ret and dlist:
+                for data, pts in zip(dlist, plist):
+                    if _add(data, pts):
                         dbg["multi"] += 1
         except (AttributeError, cv2.error):
-            pass
+            try:
+                data, bbox, _ = cv2.QRCodeDetector().detectAndDecode(tile)
+                if _add(data, bbox):
+                    dbg["iter"] += 1
+            except (AttributeError, cv2.error):
+                pass
 
-    # Iterative approach: detect one QR, mask it, repeat
-    remaining = gray.copy()
-    for _ in range(15):
-        data, bbox, _ = cv2.QRCodeDetector().detectAndDecode(remaining)
-        if not data:
-            break
-        already = any(r["data"] == data for r in results)
-        if not already:
-            results.append(_make_qr_obj_from_cv(data, bbox))
+    # Pass 6: Tiled detectAndDecode (left/right halves)
+    gray, _ = _load()
+    h, w = gray.shape
+    for tile in [gray[:, :w//2], gray[:, w//2:]]:
+        data, bbox, _ = cv2.QRCodeDetector().detectAndDecode(tile)
+        if _add(data, bbox):
             dbg["iter"] += 1
-        if bbox is not None and len(bbox) > 0:
-            pts = np.array(bbox[0]).astype(int)
-            margin = 10
-            x, y = max(int(min(pts[:, 0])) - margin, 0), max(int(min(pts[:, 1])) - margin, 0)
-            x2 = min(int(max(pts[:, 0])) + margin, remaining.shape[1])
-            y2 = min(int(max(pts[:, 1])) + margin, remaining.shape[0])
-            cv2.rectangle(remaining, (x, y), (x2, y2), (0,), -1)
 
-    # pyzbar supplement
+    # Pass 7: pyzbar supplement
+    gray_pil, img_pil = _load()
     if PYZBAR_AVAILABLE:
         try:
-            for img_in in (img_pil, img_pil.convert('L'), Image.fromarray(gray)):
+            for img_in in (img_pil, img_pil.convert('L'), Image.fromarray(gray_pil)):
                 pyz_found = pyzbar_decode(img_in)
                 for qr in pyz_found:
                     data_str = qr.data.decode('utf-8', errors='ignore') if isinstance(qr.data, bytes) else str(qr.data)
