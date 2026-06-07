@@ -84,10 +84,16 @@ def detect_all_qrs(image_path):
     if _add(data, bbox):
         dbg["iter"] += 1
 
-    # Pass 5: Tiled detectAndDecodeMulti (left/right halves)
+    # Pass 5+6: Overlapping tiled detection (handles QRs straddling the midline)
     gray, _ = _load()
     h, w = gray.shape
-    for tile, offset_x in [(gray[:, :w//2], 0), (gray[:, w//2:], w//2)]:
+    # Use overlapping horizontal strips: left 70%, right 70%, center 70%
+    tile_w = int(w * 0.72)
+    for x_start in [0, max(0, w // 4), max(0, w // 2)]:
+        x_end = min(x_start + tile_w, w)
+        if x_end - x_start < 100:
+            continue
+        tile = gray[:, x_start:x_end]
         try:
             ret, dlist, plist, *_ = cv2.QRCodeDetector().detectAndDecodeMulti(tile)
             if ret and dlist:
@@ -95,20 +101,13 @@ def detect_all_qrs(image_path):
                     if _add(data, pts):
                         dbg["multi"] += 1
         except (AttributeError, cv2.error):
-            try:
-                data, bbox, _ = cv2.QRCodeDetector().detectAndDecode(tile)
-                if _add(data, bbox):
-                    dbg["iter"] += 1
-            except (AttributeError, cv2.error):
-                pass
-
-    # Pass 6: Tiled detectAndDecode (left/right halves)
-    gray, _ = _load()
-    h, w = gray.shape
-    for tile in [gray[:, :w//2], gray[:, w//2:]]:
-        data, bbox, _ = cv2.QRCodeDetector().detectAndDecode(tile)
-        if _add(data, bbox):
-            dbg["iter"] += 1
+            pass
+        try:
+            data, bbox, _ = cv2.QRCodeDetector().detectAndDecode(tile)
+            if _add(data, bbox):
+                dbg["iter"] += 1
+        except (AttributeError, cv2.error):
+            pass
 
     # Pass 7: pyzbar supplement
     gray_pil, img_pil = _load()
