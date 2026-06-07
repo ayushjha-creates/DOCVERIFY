@@ -8,11 +8,7 @@
         "api": {
             "entrypoint": "api/index.py",
             "routePrefix": "/api",
-            "framework": "fastapi"
-        }
-    },
-    "functions": {
-        "api/index.py": {
+            "framework": "fastapi",
             "maxDuration": 60,
             "memory": 1024
         }
