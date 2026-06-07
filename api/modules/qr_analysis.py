@@ -22,34 +22,35 @@ def detect_all_qrs(image_path):
     h, w = gray.shape
     dbg = {"img_size": f"{w}x{h}", "multi": 0, "iter": 0, "pyzbar": 0}
 
-    qr_detector = cv2.QRCodeDetector()
+    # Try all methods on the FULL image first, each with its own detector instance
+    for attempt, src in [("gray", gray), ("thresh", _threshold(gray))]:
+        try:
+            ret, data_list, pts_list, *_ = cv2.QRCodeDetector().detectAndDecodeMulti(src)
+            if ret and data_list:
+                for data, pts in zip(data_list, pts_list):
+                    if data and not any(r["data"] == data for r in results):
+                        results.append(_make_qr_obj_from_cv(data, pts))
+                        dbg["multi"] += 1
+        except (AttributeError, cv2.error):
+            pass
 
-    # Method 1: detectAndDecodeMulti
-    try:
-        ret, data_list, pts_list, *_ = qr_detector.detectAndDecodeMulti(gray)
-        if ret and data_list:
-            for data, pts in zip(data_list, pts_list):
-                if data:
-                    results.append(_make_qr_obj_from_cv(data, pts))
-                    dbg["multi"] += 1
-    except (AttributeError, cv2.error):
-        pass
-
-    # Method 2: Iterative detectAndDecode
+    # Iterative approach: detect one QR, mask it, repeat
     remaining = gray.copy()
     for _ in range(15):
-        data, bbox, _ = qr_detector.detectAndDecode(remaining)
-        if not data:
+        data, bbox, _ = cv2.QRCodeDetector().detectAndDecode(remaining)
+        if not data or any(r["data"] == data for r in results):
             break
         results.append(_make_qr_obj_from_cv(data, bbox))
         dbg["iter"] += 1
         if bbox is not None and len(bbox) > 0:
             pts = np.array(bbox[0]).astype(int)
-            x, y = max(int(min(pts[:, 0])) - 5, 0), max(int(min(pts[:, 1])) - 5, 0)
-            x2, y2 = min(int(max(pts[:, 0])) + 5, remaining.shape[1]), min(int(max(pts[:, 1])) + 5, remaining.shape[0])
+            margin = 10
+            x, y = max(int(min(pts[:, 0])) - margin, 0), max(int(min(pts[:, 1])) - margin, 0)
+            x2 = min(int(max(pts[:, 0])) + margin, remaining.shape[1])
+            y2 = min(int(max(pts[:, 1])) + margin, remaining.shape[0])
             cv2.rectangle(remaining, (x, y), (x2, y2), (0,), -1)
 
-    # Method 3: pyzbar supplement
+    # pyzbar supplement
     if PYZBAR_AVAILABLE:
         try:
             for img_in in (img_pil, img_pil.convert('L'), Image.fromarray(gray)):
@@ -62,7 +63,6 @@ def detect_all_qrs(image_path):
         except Exception:
             pass
 
-    # Deduplicate
     seen_data = set()
     unique = []
     for r in results:
@@ -72,6 +72,14 @@ def detect_all_qrs(image_path):
 
     print(f"[qr] detect: multi={dbg['multi']} iter={dbg['iter']} pyz={dbg['pyzbar']} total={len(results)} unique={len(unique)} img={dbg['img_size']}", flush=True)
     return unique, dbg
+
+
+def _threshold(gray):
+    try:
+        _, th = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        return th
+    except Exception:
+        return gray
 
 
 def _make_qr_obj_from_cv(data, bbox):
