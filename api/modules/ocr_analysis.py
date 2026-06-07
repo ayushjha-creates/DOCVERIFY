@@ -18,7 +18,7 @@ except ImportError:
     pytesseract = None
     TESSERACT_AVAILABLE = False
 
-_MAX_OCR_PX = 1200  # resize longest side to this before OCR
+_MAX_OCR_PX = 900  # resize longest side to this before OCR
 
 # ── Configure bundled tesseract binary ──
 _TESS_CFG = None
@@ -98,7 +98,8 @@ def analyze_ocr(image_path):
             os.environ["LD_LIBRARY_PATH"] = f"{_TESS_CFG['libdir']}:{_old_ld}"
         try:
             ocr_data = pytesseract.image_to_data(
-                thresh, output_type=pytesseract.Output.DICT
+                thresh, output_type=pytesseract.Output.DICT,
+                config="--psm 6 --oem 1"
             )
             text = " ".join([w for w in ocr_data["text"] if w.strip()])
         finally:

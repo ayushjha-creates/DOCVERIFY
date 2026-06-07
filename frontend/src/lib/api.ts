@@ -61,7 +61,7 @@ export async function analyzeDocument(file: File): Promise<AnalysisResult> {
   formData.append("file", file);
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 25000);
+  const timeout = setTimeout(() => controller.abort(), 45000);
 
   let response;
   try {
@@ -73,7 +73,7 @@ export async function analyzeDocument(file: File): Promise<AnalysisResult> {
   } catch (networkError) {
     clearTimeout(timeout);
     if (networkError instanceof DOMException && networkError.name === "AbortError") {
-      throw new Error("Analysis timed out (took longer than 25 seconds). Try a smaller file or fewer pages.");
+      throw new Error("Analysis timed out (took longer than 45 seconds). Large documents with many pages may exceed the server limit. Try a smaller file.");
     }
     throw new Error(`Network error: Unable to reach the server. ${networkError instanceof Error ? networkError.message : "Please check your connection."}`);
   }

@@ -67,8 +67,8 @@ export default function Home() {
     const stuckTimer = setTimeout(() => {
       stuckRef.current = true;
       setStuck(true);
-      setProgressMsg("Still analyzing... Large documents may take longer.");
-    }, 22000);
+      setProgressMsg("Still analyzing... Large documents may take up to 45 seconds.");
+    }, 35000);
 
     try {
       const res = await analyzeDocument(file);

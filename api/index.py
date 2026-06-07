@@ -234,7 +234,7 @@ async def analyze_document(file: UploadFile = File(...)):
         images, cleaned_images = pp_result
         num_pages = len(images)
         image_pool = cleaned_images if cleaned_images else images
-        MAX_PAGES = 5
+        MAX_PAGES = 3
         if num_pages > MAX_PAGES:
             image_pool = image_pool[:MAX_PAGES]
             num_pages = MAX_PAGES
