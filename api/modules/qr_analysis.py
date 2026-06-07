@@ -40,8 +40,14 @@ def _decode_qr_cv2(gray):
 
 def _decode_multi_qr(gray):
     try:
-        ret, data_list, bbox_list = cv2.QRCodeDetector().detectAndDecodeMulti(gray)
+        out = cv2.QRCodeDetector().detectAndDecodeMulti(gray)
     except AttributeError:
+        return None
+    if isinstance(out, tuple):
+        ret = out[0]
+        data_list = out[1] if len(out) > 1 else []
+        bbox_list = out[2] if len(out) > 2 else []
+    else:
         return None
     if not ret or not data_list:
         return None
