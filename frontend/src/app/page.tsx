@@ -144,8 +144,9 @@ export default function Home() {
                 <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
                 AI-Powered Forensics
               </div>
-              <h1 className="text-5xl md:text-6xl font-bold tracking-tight mb-4 bg-gradient-to-r from-foreground via-foreground to-primary bg-clip-text text-transparent">
-                DOCVERIFY AI
+              <h1 className="text-5xl md:text-6xl font-bold tracking-tight mb-4">
+                <span className="bg-gradient-to-r from-foreground via-foreground to-primary bg-clip-text text-transparent">DOCVERIFY</span>{' '}
+                <span className="text-primary">AI</span>
               </h1>
               <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
                 Verify Document Authenticity with AI
@@ -401,7 +402,7 @@ export default function Home() {
       <footer className="border-t border-border/40 mt-16">
         <div className="max-w-6xl mx-auto px-4 py-8 text-center">
           <p className="text-sm text-muted-foreground">
-            DOCVERIFY AI — Advanced Document Forensics Platform
+            <span>DOCVERIFY</span>{' '}<span className="text-primary">AI</span> — Advanced Document Forensics Platform
           </p>
           <p className="text-xs text-muted-foreground/60 mt-1">
             Powered by Multi-Layer Forensic Analysis &amp; Blockchain Verification
