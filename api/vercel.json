@@ -1,11 +1,11 @@
 {
   "functions": {
-    "index.py": {
+    "api/index.py": {
       "maxDuration": 300,
       "memory": 1024
     }
   },
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.py" }
+    { "source": "/api/(.*)", "destination": "/api/index.py" }
   ]
 }
