@@ -14,6 +14,9 @@ FAIL_POINTS = {
     "signature": 15,
 }
 
+# Fail engines with score >= this threshold get full fail deduction
+_FULL_FAIL_THRESHOLD = 0.7
+
 
 def _score_to_status(score):
     if score >= 85:
@@ -22,17 +25,6 @@ def _score_to_status(score):
         return "suspicious"
     else:
         return "tampered"
-
-
-def _positive_findings(results):
-    count = 0
-    for key in ("metadata", "ocr", "qr", "tampering", "signature"):
-        val = results.get(key, {})
-        if val and val.get("findings"):
-            for f in val["findings"]:
-                if f.get("severity") in ("high", "medium") and f.get("points", 0) > 0:
-                    count += 1
-    return count
 
 
 def _engine_severity(val):
@@ -44,6 +36,25 @@ def _engine_severity(val):
     if s in ("suspicious", "warn"):
         return "warn"
     return "clean"
+
+
+def _duplicate_penalty(findings_map):
+    """Detect actual duplicate/redundant findings by normalized title."""
+    from collections import Counter
+    titles = []
+    for key, findings in findings_map.items():
+        if not findings:
+            continue
+        for f in findings:
+            t = f.get("title", "").strip().lower()
+            if t and f.get("points", 0) > 0:
+                titles.append(t)
+    dup_count = sum(c - 1 for c in Counter(titles).values() if c > 1)
+    if dup_count >= 4:
+        return 25
+    if dup_count >= 2:
+        return 10
+    return 0
 
 
 def calculate_score(results):
@@ -93,7 +104,7 @@ def calculate_score(results):
         if fail_count > 0:
             fail_count -= 1
 
-    # ── FAIL multiplier (only multiplies the FAIL engine's deduction) ──
+    # ── FAIL multiplier (capped so multiplied deduction never exceeds fail_pts) ──
     multiplier = 1.0
     if fail_count == 1:
         multiplier = 1.3
@@ -103,36 +114,21 @@ def calculate_score(results):
         multiplier = 2.0
 
     if multiplier > 1.0:
-        for name, val, _, _ in engines:
+        for name, val, _, fail_pts in engines:
             if _engine_severity(val) == "fail":
-                deductions[name] = int(deductions[name] * multiplier)
+                multiplied = int(deductions[name] * multiplier)
+                deductions[name] = min(multiplied, fail_pts)
+        reasons.append(f"FAIL severity penalty (×{multiplier})")
 
-    # ── Co-occurrence penalty (only triggers on 2+ distinct engines with deductions) ──
+    # ── Co‑occurrence: one flat penalty for 3+ engines with deductions ──
     active_engines = sum(1 for v in deductions.values() if v > 0)
-    co_penalty = 0
-    if active_engines >= 5:
-        co_penalty = 45
-    elif active_engines >= 4:
-        co_penalty = 30
-    elif active_engines >= 3:
-        co_penalty = 20
-    elif active_engines >= 2:
-        co_penalty = 10
+    co_penalty = 10 if active_engines >= 3 else 0
 
-    # ── Duplicate deduction ──
-    pos_count = _positive_findings(results)
-    dup_penalty = 0
-    if pos_count >= 8:
-        dup_penalty = 40
-    elif pos_count >= 5:
-        dup_penalty = 25
-    elif pos_count >= 3:
-        dup_penalty = 10
+    # ── True duplicate penalty (same title repeated across findings) ──
+    findings_map = {k: results.get(k, {}).get("findings", []) for k in ("metadata", "ocr", "qr", "tampering", "signature")}
+    dup_penalty = _duplicate_penalty(findings_map)
 
     total_deduction = sum(deductions.values()) + co_penalty + dup_penalty
-
-    if multiplier > 1.0:
-        reasons.append(f"FAIL multiplier (×{multiplier}) applied to engines with FAIL status")
 
     for name, label, pts in [
         ("metadata", "Metadata issues", deductions["metadata"]),
@@ -144,9 +140,9 @@ def calculate_score(results):
         if pts > 0:
             reasons.append(f"{label} (-{pts} pts)")
     if co_penalty > 0:
-        reasons.append(f"Multiple issue types detected (-{co_penalty} pts co-occurrence penalty)")
+        reasons.append(f"Co-occurring issue types (-{co_penalty} pts)")
     if dup_penalty > 0:
-        reasons.append(f"Duplicate/redundant findings (-{dup_penalty} pts)")
+        reasons.append(f"Redundant findings (-{dup_penalty} pts)")
 
     final_score = max(0, 100 - total_deduction)
     status = _score_to_status(final_score)

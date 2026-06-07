@@ -83,26 +83,73 @@ def _make_qr_obj(data, bbox):
     return obj
 
 
-def _find_all_qr_cv2(gray):
-    results = _decode_multi_qr(gray)
-    if results is not None:
-        return results
+def _deduplicate_qrs(objects):
+    seen_data = set()
+    unique = []
+    for obj in objects:
+        d = obj.data.decode("utf-8") if isinstance(obj.data, bytes) else obj.data
+        if d not in seen_data:
+            seen_data.add(d)
+            unique.append(obj)
+    return unique
+
+
+def _validate_qr(obj, img_shape):
+    h, w = img_shape[:2]
+    r = obj.rect
+    area = r.width * r.height
+    img_area = h * w
+    if r.width < 15 or r.height < 15:
+        return False
+    if area > img_area * 0.8:
+        return False
+    data = obj.data.decode("utf-8") if isinstance(obj.data, bytes) else obj.data
+    if len(data) < 2:
+        return False
+    return True
+
+
+def _iterative_detect(gray, max_iter=15):
     all_objs = []
     remaining = gray.copy()
-    for _ in range(10):
+    for _ in range(max_iter):
         obj = _decode_qr_cv2(remaining)
         if obj is None:
             break
         all_objs.append(obj)
         x, y, w, h = obj.rect.left, obj.rect.top, obj.rect.width, obj.rect.height
-        x = max(x - 10, 0)
-        y = max(y - 10, 0)
-        w = min(w + 20, remaining.shape[1] - x)
-        h = min(h + 20, remaining.shape[0] - y)
+        margin = 5
+        x = max(x - margin, 0)
+        y = max(y - margin, 0)
+        w = min(w + 2 * margin, remaining.shape[1] - x)
+        h = min(h + 2 * margin, remaining.shape[0] - y)
         cv2.rectangle(remaining, (x, y), (x + w, y + h), (0,), -1)
-        if h < 10 or w < 10:
+        if h < 8 or w < 8:
             break
     return all_objs
+
+
+def _find_all_qr_cv2(gray):
+    combined = []
+
+    multi = _decode_multi_qr(gray)
+    if multi:
+        combined.extend(multi)
+
+    iterative = _iterative_detect(gray)
+    for obj in iterative:
+        d = obj.data.decode("utf-8") if isinstance(obj.data, bytes) else obj.data
+        already = False
+        for existing in combined:
+            ed = existing.data.decode("utf-8") if isinstance(existing.data, bytes) else existing.data
+            if d == ed:
+                already = True
+                break
+        if not already:
+            combined.append(obj)
+
+    validated = [obj for obj in combined if _validate_qr(obj, gray.shape)]
+    return validated
 
 
 def analyze_qr_codes(image_path):
