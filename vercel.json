@@ -8,9 +8,22 @@
         "api": {
             "entrypoint": "api/index.py",
             "routePrefix": "/api",
-            "framework": "fastapi",
-            "maxDuration": 60,
-            "memory": 1024
+            "framework": "fastapi"
         }
-    }
+    },
+    "headers": [
+        {
+            "source": "/(.*)",
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "no-cache, no-store, must-revalidate"
+                },
+                {
+                    "key": "Pragma",
+                    "value": "no-cache"
+                }
+            ]
+        }
+    ]
 }
