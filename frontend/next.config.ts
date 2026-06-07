@@ -7,9 +7,6 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/*": ["./public/**/*"],
   },
-  experimental: {
-    earlyHints: false,
-  },
 };
 
 export default nextConfig;
