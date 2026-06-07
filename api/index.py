@@ -8,6 +8,7 @@ import traceback
 import shutil
 import datetime
 import logging
+import subprocess
 
 _api_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _api_dir)
@@ -29,9 +30,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SAMPLE_DIR = os.path.join(_api_dir, "sample")
-os.makedirs(SAMPLE_DIR, exist_ok=True)
-
 
 def _img_to_b64(path: str) -> str:
     try:
@@ -44,12 +42,20 @@ def _img_to_b64(path: str) -> str:
         return ""
 
 
-def _import_module(module_name):
+def _test_import(mod_name):
     try:
-        return __import__(f"modules.{module_name}", fromlist=[module_name])
+        result = subprocess.run(
+            [sys.executable, "-c", f"import {mod_name}; print('ok')"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            return "loaded"
+        else:
+            return f"crashed: {result.stderr.strip()[:200]}"
+    except subprocess.TimeoutExpired:
+        return "timeout"
     except Exception as e:
-        logger.error(f"Failed to import modules.{module_name}: {traceback.format_exc()}")
-        return None
+        return f"error: {e}"
 
 
 @app.get("/health")
@@ -59,48 +65,21 @@ def health_check():
 
 @app.get("/debug")
 def debug_check():
-    results = {"status": "ok", "modules": {}, "libraries": {}, "env": {}}
-    for name in [
-        "preprocessing", "metadata_analysis", "ocr_analysis", "qr_analysis",
-        "tampering_detection", "signature_analysis", "scoring", "blockchain",
-        "report_generator"
-    ]:
-        mod = _import_module(name)
-        results["modules"][name] = "loaded" if mod is not None else "failed"
-    for lib_name, lib_import in [
-        ("cv2", "cv2"), ("pytesseract", "pytesseract"), ("fitz (PyMuPDF)", "fitz"),
-        ("PIL", "PIL"), ("numpy", "numpy"), ("reportlab", "reportlab"),
-        ("pdfplumber", "pdfplumber"),
-    ]:
-        try:
-            __import__(lib_import)
-            results["libraries"][lib_name] = "loaded"
-        except Exception as e:
-            results["libraries"][lib_name] = f"failed: {e}"
+    results = {"status": "ok", "libraries": {}, "modules": {}, "env": {}}
+
+    for lib in ["numpy", "PIL", "cv2", "fitz", "pytesseract", "reportlab", "pdfplumber", "pdf2image"]:
+        results["libraries"][lib] = _test_import(lib)
+
     results["env"]["cwd"] = os.getcwd()
     results["env"]["python"] = sys.version
     results["env"]["api_dir"] = _api_dir
     results["env"]["api_dir_files"] = os.listdir(_api_dir)
     bin_path = os.path.join(_api_dir, "bin")
     results["env"]["bin_exists"] = os.path.exists(bin_path)
+    if results["env"]["bin_exists"]:
+        results["env"]["bin_size_mb"] = round(sum(os.path.getsize(os.path.join(dp, f)) for dp, dn, fn in os.walk(bin_path) for f in fn) / 1024 / 1024, 1)
+
     return results
-
-
-def _run_module(module_name, func_name, *args, **kwargs):
-    mod = _import_module(module_name)
-    if mod is None:
-        return {"status": "error", "score": 0, "findings": [{"type": "error", "title": f"{module_name} unavailable", "detail": f"Module '{module_name}' could not be loaded", "points": 0, "severity": "high"}]}
-    func = getattr(mod, func_name, None)
-    if func is None:
-        return {"status": "error", "score": 0, "findings": [{"type": "error", "title": f"{func_name} not found", "detail": f"Function '{func_name}' not found in '{module_name}'", "points": 0, "severity": "high"}]}
-    try:
-        logger.info(f"Running {module_name}.{func_name}...")
-        result = func(*args, **kwargs)
-        logger.info(f"{module_name}.{func_name} completed")
-        return result
-    except Exception as e:
-        logger.error(f"Error in {module_name}.{func_name}: {traceback.format_exc()}")
-        return {"status": "error", "score": 0, "findings": [{"type": "error", "title": f"{module_name} failed", "detail": f"{func_name} error: {str(e)}", "points": 0, "severity": "high"}]}
 
 
 @app.post("/analyze")
@@ -123,22 +102,38 @@ async def analyze_document(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"Failed to save file: {str(e)}")
 
     try:
-        pp_result = _run_module("preprocessing", "preprocess_document", file_path, output_dir=workdir)
-        if pp_result is None or pp_result.get("status") == "error":
-            shutil.rmtree(workdir, ignore_errors=True)
-            raise HTTPException(status_code=400, detail=(pp_result["findings"][0]["detail"] if pp_result and pp_result.get("findings") else "Could not process document"))
+        results = {"analyzed_pages": 0}
+        findings = {"metadata": [], "ocr": [], "qr": [], "tampering": [], "signature": []}
+        deductions = {}
+        reasons = []
 
-        if not isinstance(pp_result, tuple) or not pp_result[0]:
+        # Preprocess
+        pp = _test_import("modules.preprocessing")
+        if pp != "loaded":
             shutil.rmtree(workdir, ignore_errors=True)
-            raise HTTPException(status_code=400, detail="Could not extract any pages from the document")
+            raise HTTPException(status_code=400, detail=f"Preprocessing unavailable ({pp})")
+
+        import importlib
+        pre_mod = importlib.import_module("modules.preprocessing")
+        pp_result = pre_mod.preprocess_document(file_path, output_dir=workdir)
+        if not pp_result or not isinstance(pp_result, tuple) or not pp_result[0]:
+            shutil.rmtree(workdir, ignore_errors=True)
+            raise HTTPException(status_code=400, detail="Could not extract pages from document")
 
         images, cleaned_images = pp_result
         num_pages = len(images)
         image_pool = cleaned_images if cleaned_images else images
+        results["analyzed_pages"] = num_pages
         logger.info(f"Session {session_id}: {num_pages} pages")
 
-        results = {}
-        results["metadata"] = _run_module("metadata_analysis", "analyze_metadata", file_path) or {"status": "error", "score": 0, "findings": []}
+        # Metadata
+        try:
+            meta_mod = importlib.import_module("modules.metadata_analysis")
+            meta_result = meta_mod.analyze_metadata(file_path)
+        except Exception as e:
+            meta_result = {"status": "error", "score": 0, "findings": [{"type": "error", "title": "Metadata unavailable", "detail": str(e), "points": 0, "severity": "high"}]}
+        results["metadata"] = meta_result
+        findings["metadata"] = meta_result.get("findings", [])
 
         all_ocr, all_qr, all_tampering, all_signature = [], [], [], []
         sig_details_all, sig_highlight_b64, ela_marked_b64 = [], [], []
@@ -146,17 +141,34 @@ async def analyze_document(file: UploadFile = File(...)):
         for page_idx, page_img in enumerate(image_pool):
             page_num = page_idx + 1
 
-            for mod_name, func_name, collector in [
-                ("ocr_analysis", "analyze_ocr", all_ocr),
-                ("qr_analysis", "analyze_qr_codes", all_qr),
-            ]:
-                result = _run_module(mod_name, func_name, page_img)
-                if result:
-                    for ff in result.get("findings", []):
-                        ff["page"] = page_num
-                    collector.append(result)
+            # OCR
+            try:
+                ocr_mod = importlib.import_module("modules.ocr_analysis")
+                ocr_r = ocr_mod.analyze_ocr(page_img)
+            except Exception as e:
+                ocr_r = {"status": "error", "score": 0, "findings": [{"type": "error", "title": "OCR unavailable", "detail": str(e), "points": 0, "severity": "high", "page": page_num}]}
+            if ocr_r:
+                for ff in ocr_r.get("findings", []):
+                    ff["page"] = page_num
+                all_ocr.append(ocr_r)
 
-            tr = _run_module("tampering_detection", "analyze_tampering", page_img, output_dir=workdir)
+            # QR
+            try:
+                qr_mod = importlib.import_module("modules.qr_analysis")
+                qr_r = qr_mod.analyze_qr_codes(page_img)
+            except Exception as e:
+                qr_r = {"status": "error", "score": 0, "findings": [{"type": "error", "title": "QR unavailable", "detail": str(e), "points": 0, "severity": "high", "page": page_num}]}
+            if qr_r:
+                for ff in qr_r.get("findings", []):
+                    ff["page"] = page_num
+                all_qr.append(qr_r)
+
+            # Tampering
+            try:
+                tamper_mod = importlib.import_module("modules.tampering_detection")
+                tr = tamper_mod.analyze_tampering(page_img, output_dir=workdir)
+            except Exception as e:
+                tr = {"status": "error", "score": 0, "findings": [{"type": "error", "title": "Tampering unavailable", "detail": str(e), "points": 0, "severity": "high", "page": page_num}]}
             if tr:
                 for ff in tr.get("findings", []):
                     ff["page"] = page_num
@@ -167,7 +179,12 @@ async def analyze_document(file: UploadFile = File(...)):
                         ela_marked_b64.append({"page": page_num, "data": b64})
                 all_tampering.append(tr)
 
-            sr = _run_module("signature_analysis", "analyze_signatures", page_img, output_dir=workdir)
+            # Signatures
+            try:
+                sig_mod = importlib.import_module("modules.signature_analysis")
+                sr = sig_mod.analyze_signatures(page_img, output_dir=workdir)
+            except Exception as e:
+                sr = {"status": "error", "score": 0, "findings": [{"type": "error", "title": "Signature unavailable", "detail": str(e), "points": 0, "severity": "high", "page": page_num}], "signatures_count": 0, "signature_details": []}
             if sr:
                 for ff in sr.get("findings", []):
                     ff["page"] = page_num
@@ -214,12 +231,29 @@ async def analyze_document(file: UploadFile = File(...)):
             "signature_details": sig_details_all,
         }
 
-        results["analyzed_pages"] = num_pages
-        results["scoring"] = _run_module("scoring", "calculate_score", results) or {"score": 0, "status": "error", "reasons": ["Scoring unavailable"], "deductions": {}}
-        results["blockchain"] = _run_module("blockchain", "create_blockchain_verification", file_path, results) or {}
+        # Scoring
+        try:
+            score_mod = importlib.import_module("modules.scoring")
+            score_result = score_mod.calculate_score(results)
+        except Exception as e:
+            score_result = {"score": 0, "status": "error", "reasons": [f"Scoring error: {e}"], "deductions": {}}
+        results["scoring"] = score_result
 
+        # Blockchain
+        try:
+            bc_mod = importlib.import_module("modules.blockchain")
+            bc_result = bc_mod.create_blockchain_verification(file_path, results)
+        except Exception as e:
+            bc_result = {"blockchain_hash": "", "document_hash": "", "timestamp": "", "verification_url": "", "block_number": 0}
+        results["blockchain"] = bc_result
+
+        # Report
         report_path = os.path.join(workdir, "report.pdf")
-        _run_module("report_generator", "generate_pdf_report", results, report_path)
+        try:
+            rpt_mod = importlib.import_module("modules.report_generator")
+            rpt_mod.generate_pdf_report(results, report_path)
+        except Exception:
+            pass
         report_b64 = _img_to_b64(report_path) if os.path.exists(report_path) else ""
 
         preview_path = os.path.join(workdir, "page_0.png")
@@ -241,13 +275,7 @@ async def analyze_document(file: UploadFile = File(...)):
                 "signature_status": results["signature"]["status"],
                 "signature_count": results["signature"].get("signatures_count", 0),
                 "signature_details": results["signature"].get("signature_details", []),
-                "findings": {
-                    "metadata": results["metadata"].get("findings", []),
-                    "ocr": results["ocr"]["findings"],
-                    "qr": results["qr"]["findings"],
-                    "tampering": results["tampering"]["findings"],
-                    "signature": results["signature"]["findings"],
-                },
+                "findings": findings,
                 "blockchain": results["blockchain"],
                 "report_b64": report_b64,
                 "marked_images": ela_marked_b64,
