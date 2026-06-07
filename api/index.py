@@ -165,12 +165,12 @@ def health_check():
 def debug_check():
     results = {"status": "ok", "libraries": {}, "modules": {}, "env": {}}
 
-    for lib in ["numpy", "PIL", "cv2", "fitz", "pytesseract", "reportlab", "pdfplumber", "pdf2image", "fastapi"]:
+    for lib in ["numpy", "PIL", "cv2", "fitz", "pytesseract", "reportlab", "pdfplumber", "pdf2image", "fastapi", "pyzbar"]:
         results["libraries"][lib] = _test_import(lib)
 
     # Also test in-process imports
     results["imports_in_process"] = {}
-    for lib in ["numpy", "PIL", "cv2", "fitz", "pytesseract", "reportlab"]:
+    for lib in ["numpy", "PIL", "cv2", "fitz", "pytesseract", "reportlab", "pyzbar"]:
         try:
             mod = __import__(lib)
             ver = getattr(mod, "__version__", "unknown")
