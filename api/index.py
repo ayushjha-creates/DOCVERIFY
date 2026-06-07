@@ -135,18 +135,11 @@ def _img_to_b64(path: str) -> str:
 
 def _test_import(mod_name):
     try:
-        result = subprocess.run(
-            [sys.executable, "-c", f"import {mod_name}; print('ok')"],
-            capture_output=True, text=True, timeout=10
-        )
-        if result.returncode == 0:
-            return "loaded"
-        else:
-            return f"crashed: {result.stderr.strip()[:200]}"
-    except subprocess.TimeoutExpired:
-        return "timeout"
+        import importlib
+        importlib.import_module(mod_name)
+        return "loaded"
     except Exception as e:
-        return f"error: {e}"
+        return f"crashed: {e}"
 
 
 @app.get("/health")
