@@ -2,8 +2,14 @@ import os
 import fitz
 from PIL import Image, ImageFilter, ImageEnhance
 import numpy as np
-import cv2
 import tempfile
+
+try:
+    import cv2
+    CV2_AVAILABLE = True
+except ImportError:
+    cv2 = None
+    CV2_AVAILABLE = False
 
 def convert_pdf_to_images(pdf_path, output_dir, dpi=200):
     images = []
@@ -19,6 +25,8 @@ def convert_pdf_to_images(pdf_path, output_dir, dpi=200):
     return images
 
 def clean_image(image_path):
+    if not CV2_AVAILABLE:
+        return image_path
     img = cv2.imread(image_path)
     if img is None:
         img_pil = Image.open(image_path).convert("RGB")

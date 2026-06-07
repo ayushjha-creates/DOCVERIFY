@@ -1,9 +1,21 @@
-import pytesseract
-from PIL import Image
-import numpy as np
-import cv2
 import re
 from collections import defaultdict
+from PIL import Image
+import numpy as np
+
+try:
+    import cv2
+    CV2_AVAILABLE = True
+except ImportError:
+    cv2 = None
+    CV2_AVAILABLE = False
+
+try:
+    import pytesseract
+    TESSERACT_AVAILABLE = True
+except ImportError:
+    pytesseract = None
+    TESSERACT_AVAILABLE = False
 
 SUSPICIOUS_KEYWORDS = [
     "edited", "modified", "altered", "tampered", "doctored",
@@ -33,6 +45,15 @@ def analyze_ocr(image_path):
     findings = []
     score = 0
     suspicious = False
+
+    if not CV2_AVAILABLE or not TESSERACT_AVAILABLE:
+        missing = [m for m, f in [("OpenCV", CV2_AVAILABLE), ("Tesseract", TESSERACT_AVAILABLE)] if not f]
+        return {
+            "status": "error",
+            "score": 0,
+            "findings": [{"type": "error", "title": "OCR Unavailable", "detail": f"Missing: {', '.join(missing)}", "points": 0, "severity": "high"}],
+            "text": "",
+        }
 
     try:
         img = _load_image(image_path)

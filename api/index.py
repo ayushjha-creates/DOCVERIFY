@@ -67,13 +67,26 @@ def health_check():
 def debug_check():
     results = {"status": "ok", "libraries": {}, "modules": {}, "env": {}}
 
-    for lib in ["numpy", "PIL", "cv2", "fitz", "pytesseract", "reportlab", "pdfplumber", "pdf2image"]:
+    for lib in ["numpy", "PIL", "cv2", "fitz", "pytesseract", "reportlab", "pdfplumber", "pdf2image", "fastapi"]:
         results["libraries"][lib] = _test_import(lib)
+
+    # Also test in-process imports
+    results["imports_in_process"] = {}
+    for lib in ["numpy", "PIL", "cv2", "fitz", "pytesseract", "reportlab"]:
+        try:
+            mod = __import__(lib)
+            ver = getattr(mod, "__version__", "unknown")
+            results["imports_in_process"][lib] = f"ok (v{ver})"
+        except Exception as e:
+            results["imports_in_process"][lib] = f"error: {e}"
 
     results["env"]["cwd"] = os.getcwd()
     results["env"]["python"] = sys.version
     results["env"]["api_dir"] = _api_dir
     results["env"]["api_dir_files"] = os.listdir(_api_dir)
+    vendor_path = os.path.join(_api_dir, "_vendor")
+    if os.path.exists(vendor_path):
+        results["env"]["vendor_contents"] = os.listdir(vendor_path)[:50]
     bin_path = os.path.join(_api_dir, "bin")
     results["env"]["bin_exists"] = os.path.exists(bin_path)
     if results["env"]["bin_exists"]:

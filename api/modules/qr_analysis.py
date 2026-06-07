@@ -1,9 +1,15 @@
-import cv2
 import numpy as np
 from PIL import Image
 import os
 import re
 import urllib.parse
+
+try:
+    import cv2
+    CV2_AVAILABLE = True
+except ImportError:
+    cv2 = None
+    CV2_AVAILABLE = False
 
 TRUSTED_DOMAINS = [
     "gov.in", "gov.sg", "gov.my", "edu", "ac.in",
@@ -79,6 +85,9 @@ def analyze_qr_codes(image_path):
     score = 0
     qr_codes = []
     suspicious = False
+
+    if not CV2_AVAILABLE:
+        return {"status": "error", "score": 0, "findings": [{"type": "error", "title": "QR Unavailable", "detail": "OpenCV not available", "points": 0, "severity": "high"}], "qr_codes": []}
 
     try:
         img = cv2.imread(image_path)

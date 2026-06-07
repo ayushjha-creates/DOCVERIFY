@@ -1,8 +1,20 @@
-import cv2
 import numpy as np
 from PIL import Image
 import os
-import pytesseract
+
+try:
+    import cv2
+    CV2_AVAILABLE = True
+except ImportError:
+    cv2 = None
+    CV2_AVAILABLE = False
+
+try:
+    import pytesseract
+    TESSERACT_AVAILABLE = True
+except ImportError:
+    pytesseract = None
+    TESSERACT_AVAILABLE = False
 
 # ═══════════════════════════════════════════════════════════════
 #  CONFIGURATION — all thresholds adjustable here
@@ -173,6 +185,17 @@ def _detect_stamp_hough(img_gray):
 
 
 def analyze_signatures(image_path, output_dir=None):
+    if not CV2_AVAILABLE or not TESSERACT_AVAILABLE:
+        missing = [m for m, f in [("OpenCV", CV2_AVAILABLE), ("Tesseract", TESSERACT_AVAILABLE)] if not f]
+        return {
+            "status": "error",
+            "score": 0,
+            "findings": [{"type": "error", "title": "Signature Analysis Unavailable", "detail": f"Missing: {', '.join(missing)}", "points": 0, "severity": "high"}],
+            "signatures_count": 0,
+            "signature_details": [],
+            "highlight_path": None,
+        }
+
     findings = []
     score = 0
     suspicious = False

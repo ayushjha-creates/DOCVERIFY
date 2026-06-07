@@ -1,9 +1,15 @@
-import cv2
 import numpy as np
 from PIL import Image, ImageChops
 from io import BytesIO
 import os
 import math
+
+try:
+    import cv2
+    CV2_AVAILABLE = True
+except ImportError:
+    cv2 = None
+    CV2_AVAILABLE = False
 
 
 def _finding(ftype, title, detail, points, severity, field_location=""):
@@ -482,6 +488,9 @@ def detect_inconsistent_resolution(img_bgr):
 
 
 def analyze_tampering(image_path, output_dir=None):
+    if not CV2_AVAILABLE:
+        return {"status": "error", "score": 0, "findings": [{"type": "error", "title": "Tampering Unavailable", "detail": "OpenCV not available", "points": 0, "severity": "high"}], "marked_image_path": None}
+
     all_findings = []
     total_score = 0
     final_suspicious = False
