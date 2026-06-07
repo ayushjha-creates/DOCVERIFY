@@ -30,6 +30,19 @@ SUSPICIOUS_PRODUCERS = [
     "PDF2Go", "online2pdf", "pandoc",
 ]
 
+AI_PRODUCERS = [
+    "ChatGPT", "Claude", "Gemini", "Copilot", "Llama", "Mistral",
+    "Perplexity", "Jasper", "Copy.ai", "Writer.com", "Wordtune",
+    "Sudowrite", "Rytr", "Writesonic", "TextCortex", "Notion AI",
+    "Grammarly", "QuillBot", "StealthWriter", "Undetectable AI",
+]
+
+AI_GENERATED_SOFTWARE = [
+    "DALL-E", "Midjourney", "Stable Diffusion", "Firefly", "Runway",
+    "Leonardo AI", "DreamStudio", "Adobe Firefly", "DeepAI",
+    "Craiyon", "Ideogram", "Clipdrop", "Kandinsky",
+]
+
 
 def _parse_pdf_date(date_str):
     if not date_str or "D:" not in date_str:
@@ -161,6 +174,44 @@ def analyze_metadata(file_path):
                 ))
                 suspicious = True
                 score -= 5
+
+        # ── 8. AI-Generated Document Detection ──
+        creator = metadata.get("creator", "")
+        producer_lower = producer.lower() if producer else ""
+        creator_lower = creator.lower() if creator else ""
+
+        for ai_name in AI_PRODUCERS:
+            if ai_name.lower() in producer_lower or ai_name.lower() in creator_lower:
+                findings.append(_finding(
+                    "warning", "AI: AI Tool Detected in Metadata",
+                    f"Document produced by '{producer}' — indicates AI-generated or AI-assisted content",
+                    points=15, severity="high", field_location="producer"
+                ))
+                suspicious = True
+                score -= 15
+                break
+
+        for ai_sw in AI_GENERATED_SOFTWARE:
+            if ai_sw.lower() in producer_lower or ai_sw.lower() in creator_lower:
+                findings.append(_finding(
+                    "warning", "AI: AI Image Generator Detected",
+                    f"Document produced by '{producer}' — AI-generated imagery detected",
+                    points=20, severity="high", field_location="producer"
+                ))
+                suspicious = True
+                score -= 20
+                break
+
+        # Missing producer with creator set — AI tools often strip producer metadata
+        if creator and not producer:
+            findings.append(_finding(
+                "warning", "AI: Missing Producer Metadata",
+                f"Document has creator '{creator}' but no producer — AI-generated documents "
+                "often omit or strip producer metadata",
+                points=5, severity="medium", field_location="producer"
+            ))
+            suspicious = True
+            score -= 5
 
         # ── Summary info ──
         summary_parts = []

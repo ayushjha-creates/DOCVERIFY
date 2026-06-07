@@ -33,6 +33,9 @@ app.add_middleware(
 
 def _img_to_b64(path: str) -> str:
     try:
+        if path.lower().endswith(".pdf"):
+            with open(path, "rb") as f:
+                return base64.b64encode(f.read()).decode()
         from PIL import Image
         img = Image.open(path)
         buf = io.BytesIO()
@@ -243,6 +246,11 @@ async def analyze_document(file: UploadFile = File(...)):
             "signatures_count": sum(r.get("signatures_count", 0) for r in all_signature),
             "signature_details": sig_details_all,
         }
+
+        findings["ocr"] = all_findings(all_ocr)
+        findings["qr"] = all_findings(all_qr)
+        findings["tampering"] = all_findings(all_tampering)
+        findings["signature"] = all_findings(all_signature)
 
         # Scoring
         try:

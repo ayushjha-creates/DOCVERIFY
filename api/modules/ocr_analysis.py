@@ -214,7 +214,80 @@ def analyze_ocr(image_path):
                 suspicious = True
                 score -= 8
 
-        # ── 8. Summary finding ──
+        # ── 8. AI-generated text detection ──
+        try:
+            h, w = gray.shape
+            total_pixels = h * w
+            text_pixel_ratio = np.sum(gray < 200) / total_pixels if total_pixels > 0 else 0
+
+            # Near-zero text variability suggests rendered/perfect text
+            if len(words) > 20:
+                word_lens = [len(w) for w in words]
+                word_len_std = np.std(word_lens) if len(word_lens) > 1 else 0
+                if word_len_std < 1.5 and len(words) > 50:
+                    findings.append(_finding(
+                        "warning", "AI: Unnatural Text Uniformity",
+                        f"Word length standard deviation is {word_len_std:.2f} (<1.5). "
+                        "AI-generated text often produces unnaturally uniform word lengths "
+                        "compared to the variability of human writing.",
+                        points=10, severity="high"
+                    ))
+                    suspicious = True
+                    score -= 10
+
+                avg_word_len = np.mean(word_lens)
+
+                # Very consistent word lengths across the document
+                if avg_word_len > 4.5 and word_len_std < 2.0:
+                    findings.append(_finding(
+                        "warning", "AI: Overly Consistent Text Structure",
+                        f"Average word length ({avg_word_len:.1f}) is high with low variance ({word_len_std:.1f}) — "
+                        "suggests AI-generated academic/formal text rather than natural human writing",
+                        points=5, severity="medium"
+                    ))
+                    suspicious = True
+                    score -= 5
+
+            # Check for AI-specific phrasing patterns in extracted text
+            ai_phrases = [
+                "as an ai", "i don't have personal", "i cannot", "i'm an ai",
+                "as a language model", "i'm not able to", "i don't have access to",
+                "i am an ai", "i'm an artificial intelligence",
+                "as an artificial intelligence", "i do not have personal",
+            ]
+            text_lower = text.lower()
+            for phrase in ai_phrases:
+                if phrase in text_lower:
+                    findings.append(_finding(
+                        "warning", "AI: AI-Generated Text Pattern",
+                        f"Text contains '{phrase}' — characteristic of AI-generated content",
+                        points=15, severity="high",
+                        field_location=phrase
+                    ))
+                    suspicious = True
+                    score -= 15
+                    break
+
+            # Check for lorem ipsum / placeholder content
+            # Very uniform character distribution suggests generated content
+            if len(text) > 200:
+                text_clean2 = re.sub(r'\s+', '', text.lower())
+                total_chars = len(text_clean2)
+                if total_chars > 0:
+                    unique_ratio = len(set(text_clean2)) / total_chars
+                    if unique_ratio < 0.15:
+                        findings.append(_finding(
+                            "warning", "AI: Low Character Diversity",
+                            f"Character diversity is {unique_ratio:.1%} (<15%) — "
+                            "unnaturally uniform character distribution suggests AI-generated or placeholder content",
+                            points=10, severity="high"
+                        ))
+                        suspicious = True
+                        score -= 10
+        except Exception:
+            pass
+
+        # ── 9. Summary finding ──
         if not suspicious:
             findings.append(_finding(
                 "info", "Text Analysis: Clean",

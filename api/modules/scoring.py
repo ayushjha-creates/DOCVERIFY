@@ -39,7 +39,7 @@ def _engine_severity(val):
     if not val:
         return "clean"
     s = val.get("status", "")
-    if s in ("tampered", "fail"):
+    if s in ("tampered", "fail", "error"):
         return "fail"
     if s in ("suspicious", "warn"):
         return "warn"
