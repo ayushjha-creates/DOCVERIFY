@@ -13,6 +13,48 @@ import subprocess
 _api_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _api_dir)
 
+# ── Auto-install missing packages at cold start ──
+def _ensure_deps():
+    req_file = os.path.join(_api_dir, "requirements.txt")
+    if not os.path.exists(req_file):
+        return
+    missing = []
+    critical = ["fitz", "PIL", "numpy", "cv2", "reportlab", "pytesseract"]
+    for mod in critical:
+        try:
+            __import__(mod)
+        except ImportError:
+            missing.append(mod)
+    if not missing:
+        return
+    uv_path = os.path.join(_api_dir, "_uv")
+    if os.path.isdir(uv_path):
+        uv_bin = os.path.join(uv_path, "uv")
+        if not os.path.isfile(uv_bin):
+            for root, dirs, files in os.walk(uv_path):
+                for f in files:
+                    if f == "uv":
+                        uv_bin = os.path.join(root, f)
+                        break
+        if os.path.isfile(uv_bin):
+            try:
+                subprocess.run(
+                    [uv_bin, "pip", "install", "-r", req_file, "--quiet"],
+                    capture_output=True, timeout=120
+                )
+            except Exception:
+                pass
+    # Fallback: try pip directly
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-r", req_file, "--quiet"],
+            capture_output=True, timeout=120
+        )
+    except Exception:
+        pass
+
+_ensure_deps()
+
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
