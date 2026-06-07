@@ -9,24 +9,7 @@ import shutil
 import datetime
 import logging
 
-# ── Bootstrap tesseract path BEFORE any module imports ──
 _api_dir = os.path.dirname(os.path.abspath(__file__))
-_bin_dir = os.path.join(_api_dir, "bin")
-_tess_bin = os.path.join(_bin_dir, "tesseract")
-_tessdata = os.path.join(_bin_dir, "tessdata")
-_lib_dir = os.path.join(_bin_dir, "lib")
-
-if os.path.exists(_tess_bin):
-    os.environ["TESSDATA_PREFIX"] = _tessdata
-    _existing_ld = os.environ.get("LD_LIBRARY_PATH", "")
-    os.environ["LD_LIBRARY_PATH"] = (
-        f"{_lib_dir}:{_existing_ld}" if _existing_ld else _lib_dir
-    )
-    try:
-        import pytesseract as _pt
-        _pt.pytesseract.tesseract_cmd = _tess_bin
-    except Exception:
-        pass
 
 sys.path.insert(0, _api_dir)
 
@@ -37,15 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger("docverify")
 
-def _import_module(module_name):
-    try:
-        return __import__(f"modules.{module_name}", fromlist=[module_name])
-    except Exception as e:
-        tb = traceback.format_exc()
-        logger.error(f"Failed to import modules.{module_name}: {e}\n{tb}")
-        return None
-
-app = FastAPI(title="DOCVERIFY AI API", version="1.0.0", root_path="/api")
+app = FastAPI(title="DOCVERIFY AI API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -70,15 +45,13 @@ def _img_to_b64(path: str) -> str:
         return ""
 
 
-def _img_to_b64_cv(path: str) -> str:
+def _import_module(module_name):
     try:
-        from PIL import Image
-        img = Image.open(path)
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        return base64.b64encode(buf.getvalue()).decode()
-    except Exception:
-        return ""
+        return __import__(f"modules.{module_name}", fromlist=[module_name])
+    except Exception as e:
+        tb = traceback.format_exc()
+        logger.error(f"Failed to import modules.{module_name}: {e}\n{tb}")
+        return None
 
 
 @app.get("/api/health")
@@ -110,6 +83,14 @@ def debug_check():
             results["libraries"][lib_name] = "loaded"
         except Exception as e:
             results["libraries"][lib_name] = f"failed: {e}"
+    results["cwd"] = os.getcwd()
+    results["python"] = sys.version
+    results["api_dir"] = _api_dir
+    results["files_in_api_dir"] = os.listdir(_api_dir)
+    bin_path = os.path.join(_api_dir, "bin")
+    results["bin_exists"] = os.path.exists(bin_path)
+    if os.path.exists(bin_path):
+        results["bin_contents"] = os.listdir(bin_path)
     return results
 
 
@@ -117,7 +98,6 @@ def _run_module(module_name, func_name, *args, **kwargs):
     mod = _import_module(module_name)
     if mod is None:
         error_msg = f"Module '{module_name}' could not be loaded — missing dependency"
-        logger.error(error_msg)
         return {
             "status": "error",
             "score": 0,
@@ -131,15 +111,13 @@ def _run_module(module_name, func_name, *args, **kwargs):
         }
     func = getattr(mod, func_name, None)
     if func is None:
-        error_msg = f"Function '{func_name}' not found in module '{module_name}'"
-        logger.error(error_msg)
         return {
             "status": "error",
             "score": 0,
             "findings": [{
                 "type": "error",
                 "title": f"{func_name} not found",
-                "detail": error_msg,
+                "detail": f"Function '{func_name}' not found in module '{module_name}'",
                 "points": 0,
                 "severity": "high"
             }]
@@ -180,7 +158,7 @@ async def analyze_document(file: UploadFile = File(...)):
         content = await file.read()
         with open(file_path, "wb") as f:
             f.write(content)
-        logger.info(f"Session {session_id}: saved file to {file_path} ({len(content)} bytes)")
+        logger.info(f"Session {session_id}: saved file ({len(content)} bytes)")
     except Exception as e:
         shutil.rmtree(workdir, ignore_errors=True)
         raise HTTPException(status_code=400, detail=f"Failed to save uploaded file: {str(e)}")
@@ -219,7 +197,7 @@ async def analyze_document(file: UploadFile = File(...)):
 
         for page_idx, page_img in enumerate(image_pool):
             page_num = page_idx + 1
-            logger.info(f"Session {session_id}: analyzing page {page_num}/{num_pages}")
+            logger.info(f"Session {session_id}: page {page_num}/{num_pages}")
 
             ocr_result = _run_module("ocr_analysis", "analyze_ocr", page_img)
             if ocr_result:
@@ -227,7 +205,7 @@ async def analyze_document(file: UploadFile = File(...)):
                     ff["page"] = page_num
                 all_ocr.append(ocr_result)
             else:
-                all_ocr.append({"status": "error", "score": 0, "findings": [{"type": "error", "title": "OCR unavailable", "detail": "OCR module returned no result", "points": 0, "severity": "high", "page": page_num}]})
+                all_ocr.append({"status": "error", "score": 0, "findings": []})
 
             qr_result = _run_module("qr_analysis", "analyze_qr_codes", page_img)
             if qr_result:
@@ -248,7 +226,7 @@ async def analyze_document(file: UploadFile = File(...)):
                         ela_marked_b64.append({"page": page_num, "data": b64})
                 all_tampering.append(tamper_result)
             else:
-                all_tampering.append({"status": "error", "score": 0, "findings": [{"type": "error", "title": "Tampering detection unavailable", "detail": "Tampering module returned no result", "points": 0, "severity": "high", "page": page_num}]})
+                all_tampering.append({"status": "error", "score": 0, "findings": []})
 
             sig_result = _run_module("signature_analysis", "analyze_signatures", page_img, output_dir=workdir)
             if sig_result:
@@ -307,8 +285,11 @@ async def analyze_document(file: UploadFile = File(...)):
         }
 
         results["analyzed_pages"] = num_pages
-        results["scoring"] = _run_module("scoring", "calculate_score", results)
-        results["blockchain"] = _run_module("blockchain", "create_blockchain_verification", file_path, results)
+        scoring_result = _run_module("scoring", "calculate_score", results)
+        if scoring_result is None:
+            scoring_result = {"score": 0, "status": "error", "reasons": ["Scoring module unavailable"], "deductions": {}}
+        results["scoring"] = scoring_result
+        results["blockchain"] = _run_module("blockchain", "create_blockchain_verification", file_path, results) or {}
 
         report_path = os.path.join(workdir, "report.pdf")
         _run_module("report_generator", "generate_pdf_report", results, report_path)
@@ -350,7 +331,7 @@ async def analyze_document(file: UploadFile = File(...)):
             frontend_result["results"]["preview_b64"] = _img_to_b64(preview_path)
 
         shutil.rmtree(workdir, ignore_errors=True)
-        logger.info(f"Session {session_id}: analysis complete")
+        logger.info(f"Session {session_id}: complete")
         return JSONResponse(content=frontend_result)
 
     except HTTPException:
@@ -358,6 +339,6 @@ async def analyze_document(file: UploadFile = File(...)):
         raise
     except Exception as e:
         tb = traceback.format_exc()
-        logger.error(f"Session {session_id}: Unhandled error: {e}\n{tb}")
+        logger.error(f"Session {session_id}: Unhandled: {e}\n{tb}")
         shutil.rmtree(workdir, ignore_errors=True)
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
