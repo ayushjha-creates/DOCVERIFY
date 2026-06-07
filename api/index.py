@@ -40,8 +40,9 @@ logger = logging.getLogger("docverify")
 def _import_module(module_name):
     try:
         return __import__(f"modules.{module_name}", fromlist=[module_name])
-    except ImportError as e:
-        logger.error(f"Failed to import modules.{module_name}: {e}")
+    except Exception as e:
+        tb = traceback.format_exc()
+        logger.error(f"Failed to import modules.{module_name}: {e}\n{tb}")
         return None
 
 app = FastAPI(title="DOCVERIFY AI API", version="1.0.0", root_path="/api")
@@ -83,6 +84,33 @@ def _img_to_b64_cv(path: str) -> str:
 @app.get("/api/health")
 def health_check():
     return {"status": "healthy", "app": "DOCVERIFY AI"}
+
+
+@app.get("/api/debug")
+def debug_check():
+    results = {"status": "ok", "modules": {}, "libraries": {}}
+    for name in [
+        "preprocessing", "metadata_analysis", "ocr_analysis", "qr_analysis",
+        "tampering_detection", "signature_analysis", "scoring", "blockchain",
+        "report_generator"
+    ]:
+        mod = _import_module(name)
+        results["modules"][name] = "loaded" if mod is not None else "failed"
+    for lib_name, lib_import in [
+        ("cv2", "cv2"),
+        ("pytesseract", "pytesseract"),
+        ("fitz (PyMuPDF)", "fitz"),
+        ("PIL", "PIL"),
+        ("numpy", "numpy"),
+        ("reportlab", "reportlab"),
+        ("pdfplumber", "pdfplumber"),
+    ]:
+        try:
+            __import__(lib_import)
+            results["libraries"][lib_name] = "loaded"
+        except Exception as e:
+            results["libraries"][lib_name] = f"failed: {e}"
+    return results
 
 
 def _run_module(module_name, func_name, *args, **kwargs):
