@@ -355,6 +355,8 @@ async def analyze_document(file: UploadFile = File(...)):
             for r in all_qr:
                 all_qr_details.extend(r.get("individual_results", []))
         engine_results["qr"] = {"status": qr_agg_status, "deduction": qr_agg_deduct}
+        if all_qr:
+            engine_results["qr"]["_debug"] = all_qr[0].get("details", "")[:200]
 
         tamper_agg_status = _worst_engine_status(all_tampering)
         tamper_agg_score = worst_of(all_tampering)
