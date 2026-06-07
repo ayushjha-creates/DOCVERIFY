@@ -71,7 +71,7 @@ def detect_all_qrs(image_path):
             unique.append(r)
 
     print(f"[qr] detect: multi={dbg['multi']} iter={dbg['iter']} pyz={dbg['pyzbar']} total={len(results)} unique={len(unique)} img={dbg['img_size']}", flush=True)
-    return unique
+    return unique, dbg
 
 
 def _make_qr_obj_from_cv(data, bbox):
@@ -149,7 +149,7 @@ def analyze_single_qr(qr, index):
 
 
 def analyse_qr(file_path):
-    all_qrs = detect_all_qrs(file_path)
+    all_qrs, qr_dbg = detect_all_qrs(file_path)
 
     if len(all_qrs) == 0:
         return {
@@ -196,4 +196,5 @@ def analyse_qr(file_path):
         "details": summary,
         "individual_results": individual,
         "flags": global_flags,
+        "_dbg": qr_dbg,
     }

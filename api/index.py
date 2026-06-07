@@ -355,8 +355,11 @@ async def analyze_document(file: UploadFile = File(...)):
             for r in all_qr:
                 all_qr_details.extend(r.get("individual_results", []))
         engine_results["qr"] = {"status": qr_agg_status, "deduction": qr_agg_deduct}
+        qr_dbg = {}
         if all_qr:
-            engine_results["qr"]["_debug"] = all_qr[0].get("details", "")[:200]
+            for r in all_qr:
+                if r.get("_dbg"):
+                    qr_dbg = r["_dbg"]
 
         tamper_agg_status = _worst_engine_status(all_tampering)
         tamper_agg_score = worst_of(all_tampering)
@@ -428,6 +431,7 @@ async def analyze_document(file: UploadFile = File(...)):
                 "signature_count": sum(r.get("signatures_count", 0) for r in all_signature),
                 "signature_details": sig_details_all,
                 "qr_details": all_qr_details,
+                "qr_detection_debug": qr_dbg,
                 "findings": findings,
                 "blockchain": results["blockchain"],
                 "report_b64": report_b64,
