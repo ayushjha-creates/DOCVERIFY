@@ -237,6 +237,14 @@ async def analyze_document(file: UploadFile = File(...)):
         results["analyzed_pages"] = num_pages
         logger.info(f"Session {session_id}: {num_pages} pages")
 
+        # Detect document class
+        try:
+            utils_mod = importlib.import_module("modules.utils")
+            doc_class = utils_mod.detect_document_class(file_path, "")
+        except Exception:
+            doc_class = "unknown"
+        logger.info(f"Session {session_id}: doc_class={doc_class}")
+
         # Metadata
         try:
             meta_mod = importlib.import_module("modules.metadata_analysis")
@@ -263,19 +271,20 @@ async def analyze_document(file: UploadFile = File(...)):
                     ff["page"] = page_num
                 all_ocr.append(ocr_r)
 
-            # QR
+            # QR (use original non-cleaned image for better detection)
             try:
                 qr_mod = importlib.import_module("modules.qr_analysis")
-                qr_r = qr_mod.analyse_qr(page_img)
+                orig_img = images[page_idx] if page_idx < len(images) else page_img
+                qr_r = qr_mod.analyse_qr(orig_img)
             except Exception as e:
-                qr_r = {"status": "FAIL", "deduction": 30, "qr_count": 0, "details": f"QR analysis error: {e}", "individual_results": [], "flags": []}
+                qr_r = {"status": "FAIL", "deduction": 30, "qr_count": 0, "details": f"QR analysis error: {e}", "findings": [], "individual_results": [], "flags": []}
             if qr_r:
                 all_qr.append(qr_r)
 
             # Tampering
             try:
                 tamper_mod = importlib.import_module("modules.tampering_detection")
-                tr = tamper_mod.analyze_tampering(page_img, output_dir=workdir)
+                tr = tamper_mod.analyze_tampering(page_img, output_dir=workdir, doc_class=doc_class)
             except Exception as e:
                 tr = {"status": "error", "score": 0, "findings": [{"type": "error", "title": "Tampering unavailable", "detail": str(e), "points": 0, "severity": "high", "page": page_num}]}
             if tr:
@@ -291,7 +300,7 @@ async def analyze_document(file: UploadFile = File(...)):
             # Signatures
             try:
                 sig_mod = importlib.import_module("modules.signature_analysis")
-                sr = sig_mod.analyze_signatures(page_img, output_dir=workdir)
+                sr = sig_mod.analyze_signatures(page_img, output_dir=workdir, doc_class=doc_class)
             except Exception as e:
                 sr = {"status": "error", "score": 0, "findings": [{"type": "error", "title": "Signature unavailable", "detail": str(e), "points": 0, "severity": "high", "page": page_num}], "signatures_count": 0, "signature_details": []}
             if sr:
@@ -304,10 +313,6 @@ async def analyze_document(file: UploadFile = File(...)):
                         sig_highlight_b64.append({"page": page_num, "data": b64})
                 sig_details_all.extend({**sd, "page": page_num} for sd in sr.get("signature_details", []))
                 all_signature.append(sr)
-
-        def worst_of(module_results, key="score"):
-            scores = [r.get(key, 0) for r in module_results if r]
-            return min(scores) if scores else 0
 
         def all_findings(module_results):
             merged = []
@@ -331,17 +336,16 @@ async def analyze_document(file: UploadFile = File(...)):
         # ── Build normalized engine_results for scoring ──
         engine_results = {}
 
-        meta_score = meta_result.get("score", 0) if meta_result else 0
         engine_results["metadata"] = {
             "status": meta_result.get("status", "OK"),
-            "deduction": min(abs(meta_score), 20) if meta_score < 0 else 0,
+            "deduction": meta_result.get("deduction", 0),
         }
 
         ocr_agg_status = _worst_engine_status(all_ocr)
-        ocr_agg_score = worst_of(all_ocr)
+        ocr_agg_deduction = max(r.get("deduction", 0) for r in all_ocr) if all_ocr else 0
         engine_results["ocr"] = {
             "status": ocr_agg_status,
-            "deduction": min(abs(ocr_agg_score), 20) if ocr_agg_score < 0 else 0,
+            "deduction": ocr_agg_deduction,
         }
 
         qr_agg_status = "OK"
@@ -362,23 +366,24 @@ async def analyze_document(file: UploadFile = File(...)):
                     qr_dbg = r["_dbg"]
 
         tamper_agg_status = _worst_engine_status(all_tampering)
-        tamper_agg_score = worst_of(all_tampering)
+        tamper_agg_deduction = max(r.get("deduction", 0) for r in all_tampering) if all_tampering else 0
         engine_results["tamper"] = {
             "status": tamper_agg_status,
-            "deduction": min(abs(tamper_agg_score), 35) if tamper_agg_score < 0 else 0,
+            "deduction": tamper_agg_deduction,
         }
 
         sig_agg_status = _worst_engine_status(all_signature)
-        sig_agg_score = worst_of(all_signature)
+        sig_agg_deduction = max(r.get("deduction", 0) for r in all_signature) if all_signature else 0
         if sig_agg_status == "OK" and all(r.get("status") == "no_signature" for r in all_signature):
             sig_agg_status = "OK"
         engine_results["signature"] = {
             "status": sig_agg_status,
-            "deduction": min(abs(sig_agg_score), 15) if sig_agg_score < 0 else 0,
+            "deduction": sig_agg_deduction,
         }
 
         has_duplicate = any("DUPLICATE_QR_DATA" in r.get("flags", []) for r in all_qr)
 
+        findings["qr"] = all_findings(all_qr)
         findings["ocr"] = all_findings(all_ocr)
         findings["tampering"] = all_findings(all_tampering)
         findings["signature"] = all_findings(all_signature)
@@ -386,7 +391,7 @@ async def analyze_document(file: UploadFile = File(...)):
         # Scoring
         try:
             score_mod = importlib.import_module("modules.scoring")
-            score_result = score_mod.calculate_final_score(engine_results, has_duplicate)
+            score_result = score_mod.calculate_final_score(engine_results, has_duplicate, findings, doc_class=doc_class)
         except Exception as e:
             print(f"[scoring] Error: {e}", flush=True)
             import traceback as tb
@@ -414,14 +419,24 @@ async def analyze_document(file: UploadFile = File(...)):
         preview_path = os.path.join(workdir, "page_0.png")
         preview_b64 = _img_to_b64(preview_path) if os.path.exists(preview_path) else ""
 
+        score_deductions = score_result.get("deductions", {})
+        score_reasons = score_result.get("reasons", [])
+        breakdown = score_result.get("breakdown", {})
+
         frontend_result = {
             "session_id": session_id,
             "filename": file.filename,
             "results": {
                 "analyzed_pages": num_pages,
                 "score": score_result.get("score", 0),
+                "base_score": score_result.get("base_score", 0),
+                "total_deductions": score_result.get("total_deductions", 0),
+                "anomaly_count": score_result.get("anomaly_count", 0),
+                "ai_likelihood_score": score_result.get("ai_likelihood_score", 0),
                 "status": score_result.get("verdict", "TAMPERED"),
-                "breakdown": score_result.get("breakdown", {}),
+                "reasons": score_reasons,
+                "deductions": score_deductions,
+                "breakdown": breakdown,
                 "engine_statuses": {k: v["status"] for k, v in engine_results.items()},
                 "metadata_status": engine_results["metadata"]["status"],
                 "ocr_status": engine_results["ocr"]["status"],

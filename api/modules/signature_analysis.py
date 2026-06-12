@@ -149,6 +149,98 @@ def _bbox_contains_text(img_gray, bbox):
     return False
 
 
+def detect_signature_region(image_path):
+    try:
+        img = cv2.imread(image_path)
+        if img is None:
+            pil = Image.open(image_path).convert('RGB')
+            img = cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
+
+        h, w = img.shape[:2]
+
+        # ── METHOD 1: INK CLUSTER IN BOTTOM THIRD ──
+        bottom = img[int(h * 0.55):, :]
+        gray = cv2.cvtColor(bottom, cv2.COLOR_BGR2GRAY)
+
+        binary = cv2.adaptiveThreshold(
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV,
+            blockSize=25, C=10
+        )
+
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 5))
+        closed = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
+
+        contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        candidates = []
+        for cnt in contours:
+            x, y, cw, ch = cv2.boundingRect(cnt)
+            area = cv2.contourArea(cnt)
+            if area < 400: continue
+            if area > w * h * 0.12: continue
+            if cw == 0 or ch == 0: continue
+            aspect = cw / ch
+            if aspect < 1.2 or aspect > 12: continue
+            if cw < w * 0.08: continue
+            hull_area = cv2.contourArea(cv2.convexHull(cnt))
+            if hull_area == 0: continue
+            solidity = area / hull_area
+            if solidity < 0.04 or solidity > 0.65: continue
+            candidates.append((area, x, y, cw, ch, cnt))
+
+        if candidates:
+            best = max(candidates, key=lambda c: c[0])
+            _, x, y, cw, ch, _ = best
+            y_full = y + int(h * 0.55)
+            return True, [x, y_full, cw, ch]
+
+        # ── METHOD 2: DARK STROKE CLUSTER ──
+        gray_full = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        bottom_half = gray_full[h // 2:, :]
+        edges = cv2.Canny(bottom_half, 30, 100)
+        kernel2 = cv2.getStructuringElement(cv2.MORPH_RECT, (20, 8))
+        dilated = cv2.dilate(edges, kernel2, iterations=2)
+
+        contours2, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for cnt in sorted(contours2, key=cv2.contourArea, reverse=True)[:5]:
+            x, y, cw, ch = cv2.boundingRect(cnt)
+            area = cv2.contourArea(cnt)
+            if area < 300: continue
+            if cw < w * 0.06: continue
+            if cw / max(ch, 1) < 1.5: continue
+            pts = cnt.reshape(-1, 2)
+            if len(pts) < 10: continue
+            y_std = np.std(pts[:, 1])
+            if y_std < 3: continue
+            y_full = y + h // 2
+            return True, [x, y_full, cw, ch]
+
+        # ── METHOD 3: COLOUR SIGNATURE DETECTION ──
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        bottom_hsv = hsv[int(h * 0.5):, :]
+
+        blue_mask = cv2.inRange(bottom_hsv, np.array([100, 50, 30]), np.array([140, 255, 200]))
+        dark_mask = cv2.inRange(bottom_hsv, np.array([0, 0, 0]), np.array([180, 255, 80]))
+        combined_mask = cv2.bitwise_or(blue_mask, dark_mask)
+
+        kernel3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (12, 6))
+        combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel3)
+
+        contours3, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for cnt in sorted(contours3, key=cv2.contourArea, reverse=True)[:3]:
+            x, y, cw, ch = cv2.boundingRect(cnt)
+            area = cv2.contourArea(cnt)
+            if area < 300: continue
+            if cw < w * 0.05: continue
+            if cw / max(ch, 1) < 1.2: continue
+            y_full = y + int(h * 0.5)
+            return True, [x, y_full, cw, ch]
+
+        return False, None
+    except Exception:
+        return False, None
+
+
 def _detect_stamp_hough(img_gray):
     """Detect circular stamps via Hough Circle Transform (conservative)."""
     h, w = img_gray.shape
@@ -184,7 +276,7 @@ def _detect_stamp_hough(img_gray):
     return stamps
 
 
-def analyze_signatures(image_path, output_dir=None):
+def analyze_signatures(image_path, output_dir=None, doc_class="unknown"):
     if not CV2_AVAILABLE or not TESSERACT_AVAILABLE:
         missing = [m for m, f in [("OpenCV", CV2_AVAILABLE), ("Tesseract", TESSERACT_AVAILABLE)] if not f]
         return {
@@ -214,263 +306,83 @@ def analyze_signatures(image_path, output_dir=None):
                 img = np.array(img_pil)
                 img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
+        h, w = img.shape[:2]
         original_for_draw = img.copy()
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 
-        # Otsu binarisation — adaptive per-document
-        _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        # ── Detect signature region using new cascade approach ──
+        region_found, bbox = detect_signature_region(image_path)
 
-        # Morphological close + dilate to connect nearby strokes
-        close_kernel = np.ones((5, 5), np.uint8)
-        closed = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, close_kernel)
-        dilated = cv2.dilate(closed, np.ones((3, 3), np.uint8), iterations=2)
+        if not region_found:
+            if doc_class == "system":
+                return {
+                    "status": "OK",
+                    "deduction": 0,
+                    "region_found": False,
+                    "details": "No handwritten signature detected. Normal for system-generated documents.",
+                    "flags": [],
+                    "score": 0,
+                    "findings": [{"type": "info", "title": "No Signature/Stamp Found",
+                                  "detail": "No handwritten signature detected. This is expected for system-generated documents such as boarding passes, tickets, and receipts.",
+                                  "points": 0, "severity": "minor"}],
+                    "signatures_count": 0, "signature_details": [], "highlight_path": None,
+                }
+            elif doc_class == "formal":
+                return {
+                    "status": "WARN",
+                    "deduction": 5,
+                    "region_found": False,
+                    "details": "No handwritten signature region could be detected. Formal documents typically carry a signature or authorisation mark.",
+                    "flags": ["NO_SIGNATURE_FOUND"],
+                    "score": -5,
+                    "findings": [{"type": "warning", "title": "No Signature Detected",
+                                  "detail": "No handwritten signature region could be detected. Formal documents typically carry a signature or authorisation mark. This may indicate a digital forgery or a low-quality scan that prevented detection.",
+                                  "points": 5, "severity": "medium"}],
+                    "signatures_count": 0, "signature_details": [], "highlight_path": None,
+                }
+            else:
+                return {
+                    "status": "OK",
+                    "deduction": 0,
+                    "region_found": False,
+                    "details": "No signature region detected. Document type could not be determined.",
+                    "flags": [],
+                    "score": 0,
+                    "findings": [{"type": "info", "title": "No Signature/Stamp Found",
+                                  "detail": "No signature region detected. Document type could not be determined.",
+                                  "points": 0, "severity": "minor"}],
+                    "signatures_count": 0, "signature_details": [], "highlight_path": None,
+                }
 
-        h, w = gray.shape
-        cfg = CONFIG
+        # ── Region found — build blob details ──
+        x, y, bw, bh = bbox
+        signature_blobs = [{
+            "area": bw * bh,
+            "position": (x, y, bw, bh),
+            "aspect_ratio": bw / max(bh, 1),
+            "extent": 0.3,
+            "circularity": 0.3,
+            "complexity": 25,
+            "is_stamp": False,
+            "pct_y": y / h,
+        }]
 
-        # ── Hough Circle detection for stamps ──
-        stamp_candidates = _detect_stamp_hough(gray)
+        total_sig_count = 1
+        sig_details = [{
+            "confidence": 70,
+            "bbox": [x, y, bw, bh],
+            "type": "signature",
+            "area": bw * bh,
+        }]
 
-        # ── Contour detection ──
-        contours, hierarchy = cv2.findContours(dilated, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        hier = hierarchy[0] if hierarchy is not None else []
-
-        # Identify page-border contours (outermost, covers >60% of image)
-        border_candidates = set()
-        if len(hier) > 0:
-            for idx in range(len(contours)):
-                if int(hier[idx][3]) != -1:
-                    continue
-                _, _, cw, ch = cv2.boundingRect(contours[idx])
-                if cw * ch > h * w * 0.6:
-                    border_candidates.add(idx)
-
-        signature_candidates = []
-
-        for idx, contour in enumerate(contours):
-            if idx in border_candidates:
-                continue
-
-            area = cv2.contourArea(contour)
-            if area < cfg["min_area"] or area > cfg["max_area"]:
-                continue
-
-            x, y, cw, ch = cv2.boundingRect(contour)
-            if ch < cfg["min_height"] or cw < cfg["min_width"]:
-                continue
-            if ch > h * cfg["max_height_ratio"] or cw > w * cfg["max_width_ratio"]:
-                continue
-
-            aspect_ratio = cw / ch if ch > 0 else 0
-            extent = area / (cw * ch) if cw * ch > 0 else 0
-
-            # ── Shape features ──
-            perimeter = cv2.arcLength(contour, True)
-            circularity = (4 * np.pi * area) / (perimeter * perimeter) if perimeter > 0 else 0
-            complexity = (perimeter * perimeter) / area if area > 0 else 0
-
-            hull = cv2.convexHull(contour)
-            hull_area = cv2.contourArea(hull)
-            solidity = area / hull_area if hull_area > 0 else 0
-
-            # Ink density
-            mask = np.zeros(gray.shape, dtype=np.uint8)
-            cv2.drawContours(mask, [contour], -1, 255, -1)
-            ink_pixels = np.sum(binary[mask == 255] > 0)
-            mask_pixels = np.sum(mask > 0)
-            ink_density = ink_pixels / mask_pixels if mask_pixels > 0 else 0
-
-            pct_y = y / h
-            in_bottom = pct_y > cfg["bottom_ratio"]
-
-            # ── Stamp detection via contour ──
-            # Stamps are circular/oval: high circularity, aspect near 1.0, high solidity
-            is_stamp_shape = (
-                circularity > cfg["stamp_circularity_min"]
-                and cfg["stamp_extent_min"] < extent < cfg["stamp_extent_max"]
-                and cfg["stamp_aspect_min"] < aspect_ratio < cfg["stamp_aspect_max"]
-                and solidity > cfg["stamp_solidity_min"]
-            )
-            if is_stamp_shape:
-                # Quick OCR check — if region has text, it's a logo not a stamp
-                if not _bbox_contains_text(gray, (x, y, cw, ch)):
-                    stamp_candidates.append({
-                        "area": area,
-                        "position": (x, y, cw, ch),
-                        "aspect_ratio": aspect_ratio,
-                        "extent": extent,
-                        "circularity": circularity,
-                        "solidity": solidity,
-                        "ink_density": ink_density,
-                        "is_stamp": True,
-                        "from_hough": False,
-                    })
-                continue
-
-            # ── Skip non-signature shapes ──
-            # Text is typically blocky / solid
-            if solidity > cfg["sig_solidity_max"]:
-                continue
-
-            # Skip straight horizontal / vertical lines (low complexity)
-            if complexity < 15:
-                continue
-
-            # Ink density — signatures have moderate density (strokes + white space).
-            # Very sparse = noise; extremely dense (>0.75) = solid text block.
-            if ink_density < cfg["sig_ink_density_min"] or ink_density > 0.75:
-                continue
-
-            # Aspect ratio — signatures are flat and wide
-            if not (cfg["sig_aspect_min"] < aspect_ratio < cfg["sig_aspect_max"]):
-                if in_bottom and area > 2000 and extent < 0.45:
-                    pass
-                else:
-                    continue
-
-            # Extent
-            if not (cfg["sig_extent_min"] < extent < cfg["sig_extent_max"]):
-                continue
-
-            # ── Stroke width std ──
-            mask = np.zeros(gray.shape, dtype=np.uint8)
-            cv2.drawContours(mask, [contour], -1, 255, -1)
-            stroke_pixels = np.where(mask[y:y+ch, x:x+cw] > 0)
-            if len(stroke_pixels[0]) > 50:
-                dist = cv2.distanceTransform(255 - binary[y:y+ch, x:x+cw], cv2.DIST_L2, 5)
-                stroke_vals = dist[stroke_pixels]
-                if len(stroke_vals) > 10:
-                    stroke_std = float(np.std(stroke_vals))
-                    if stroke_std < cfg["sig_stroke_std_min"]:
-                        continue
-
-            # Complexity — real signatures are organic / curvy
-            if complexity < cfg["sig_complexity_min"]:
-                continue
-
-            # ── Position score ──
-            pos_score = 0
-            if in_bottom:
-                pos_score += 1
-            if 2.5 < aspect_ratio < 5.5:
-                pos_score += 1
-            if 0.12 < extent < 0.40:
-                pos_score += 1
-            if area > 3000:
-                pos_score += 1
-            if 0.15 < ink_density < 0.50:
-                pos_score += 1
-            if complexity > 22:
-                pos_score += 1
-
-            threshold = 3 if in_bottom else 4
-            if pos_score < threshold:
-                continue
-
-            # ── OCR filter: skip if region contains recognisable text ──
-            if _bbox_contains_text(gray, (x, y, cw, ch)):
-                continue
-
-            signature_candidates.append({
-                "area": area,
-                "position": (x, y, cw, ch),
-                "aspect_ratio": aspect_ratio,
-                "extent": extent,
-                "circularity": circularity,
-                "complexity": complexity,
-                "solidity": solidity,
-                "ink_density": ink_density,
-                "pos_score": pos_score,
-                "pct_y": pct_y,
-                "is_stamp": False,
-            })
-
-        # ── Merge nearby candidates ──
-        all_candidates = signature_candidates + stamp_candidates
-        merged = []
-        used = set()
-        for i, a in enumerate(all_candidates):
-            if i in used:
-                continue
-            group = [a]
-            used.add(i)
-            for j, b in enumerate(all_candidates):
-                if j in used:
-                    continue
-                ax, ay, aw, ah = a["position"]
-                bx, by, bw, bh = b["position"]
-                a_cx, a_cy = ax + aw / 2, ay + ah / 2
-                b_cx, b_cy = bx + bw / 2, by + bh / 2
-                dist = ((a_cx - b_cx) ** 2 + (a_cy - b_cy) ** 2) ** 0.5
-                if dist < (aw + ah + bw + bh) / 2:
-                    group.append(b)
-                    used.add(j)
-            merged.append(group)
-
-        # ── Build final blob list ──
-        signature_blobs = []
-        for group in merged:
-            total = sum(m["area"] for m in group)
-            xs = [m["position"][0] for m in group]
-            ys = [m["position"][1] for m in group]
-            x = min(xs)
-            y = min(ys)
-            bw = max(m["position"][0] + m["position"][2] for m in group) - x
-            bh = max(m["position"][1] + m["position"][3] for m in group) - y
-            is_stamp = any(m.get("is_stamp", False) for m in group)
-            avg_extent = np.mean([m["extent"] for m in group])
-            avg_aspect = np.mean([m["aspect_ratio"] for m in group])
-            avg_circ = np.mean([m.get("circularity", 0) for m in group])
-            avg_complexity = np.mean([m.get("complexity", 0) for m in group])
-            pct_y = y / h
-            signature_blobs.append({
-                "area": total,
-                "position": (x, y, bw, bh),
-                "aspect_ratio": avg_aspect,
-                "extent": avg_extent,
-                "circularity": avg_circ,
-                "complexity": avg_complexity,
-                "is_stamp": is_stamp,
-                "pct_y": pct_y,
-            })
-
-        signature_blobs.sort(key=lambda b: b["pct_y"])
-
-        total_sig_count = len(signature_blobs)
-        sig_list = [b for b in signature_blobs if not b["is_stamp"]]
-        stamp_list = [b for b in signature_blobs if b["is_stamp"]]
-
-        # Safety cap — too many blobs = noise
-        if total_sig_count > cfg["noise_cap"]:
-            total_sig_count = 0
-            signature_blobs = []
-
-        # ── Compute confidence & build details ──
-        sig_details = []
-        for blob in signature_blobs:
-            conf = _compute_confidence(blob, h, is_stamp=blob.get("is_stamp", False))
-            sig_details.append({
-                "confidence": conf,
-                "bbox": [int(v) for v in blob["position"]],
-                "type": "stamp" if blob.get("is_stamp") else "signature",
-                "area": int(blob["area"]),
-            })
-
-        signatures_detected = total_sig_count
+        signatures_detected = 1
 
         # ── Draw highlighted image ──
         overlay = original_for_draw.copy()
-        for idx, blob in enumerate(signature_blobs):
-            conf = sig_details[idx]["confidence"]
-            if conf < cfg["min_report_confidence"]:
-                continue  # skip low-confidence in visual
-            x, y, bw, bh = blob["position"]
-            color = (0, 255, 0) if blob.get("is_stamp") else (0, 0, 255)
-            cv2.rectangle(overlay, (x, y), (x + bw, y + bh), color, 3)
-            label = f"{'STAMP' if blob.get('is_stamp') else 'SIG'} {conf}%"
-            cv2.putText(overlay, label, (x, max(y - 8, 15)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+        color = (0, 0, 255)
+        cv2.rectangle(overlay, (x, y), (x + bw, y + bh), color, 3)
+        label = f"SIG 70%"
+        cv2.putText(overlay, label, (x, max(y - 8, 15)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
 
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
@@ -491,59 +403,18 @@ def analyze_signatures(image_path, output_dir=None):
                 "field_location": field_location,
             }
 
-        if signatures_detected > 0:
-            sig_count = len(sig_list)
-            stamp_count = len(stamp_list)
-            parts = []
-            if sig_count > 0:
-                parts.append(f"{sig_count} signature(s)")
-            if stamp_count > 0:
-                parts.append(f"{stamp_count} stamp(s)")
-            desc = ", ".join(parts) if parts else f"{signatures_detected} mark(s)"
-
-            # Only report high-confidence findings
-            high_conf = [sd for sd in sig_details if sd["confidence"] >= cfg["min_report_confidence"]]
-
-            if high_conf:
-                highest = max(high_conf, key=lambda d: d["confidence"])
-                primary_type = "signature" if highest["type"] == "signature" else "stamp"
-                findings.append(_finding(
-                    "info", f"{primary_type.capitalize()} Detected",
-                    f"Found {desc} in document (top confidence: {highest['confidence']}%)",
-                    points=0, severity="minor"
-                ))
-
-                pos = highest["bbox"]
-                location = "bottom" if pos[1] > h * 0.5 else "top"
-                side = "right" if pos[0] > w * 0.5 else "left" if pos[0] > w * 0.2 else "center"
-                findings.append(_finding(
-                    "info", "Primary Mark Location",
-                    f"{primary_type.capitalize()} detected in {location} {side} with {highest['confidence']}% confidence",
-                    points=0, severity="minor"
-                ))
-
-                for sd in high_conf[:3]:
-                    x, y, bw, bh = sd["bbox"]
-                    label = "Stamp" if sd["type"] == "stamp" else "Signature"
-                    findings.append(_finding(
-                        "info", f"{label} {high_conf.index(sd)+1}",
-                        f"Position: ({x}, {y}), Size: {bw}x{bh}, Confidence: {sd['confidence']}%",
-                        points=0, severity="minor"
-                    ))
-
-
-            else:
-                findings.append(_finding(
-                    "info", "Low Confidence Detections",
-                    f"Found {signatures_detected} potential marks but confidence is low — manual review recommended",
-                    points=0, severity="minor"
-                ))
-        else:
-                findings.append(_finding(
-                    "info", "No Signature/Stamp Found",
-                    "No signatures or stamps detected in document",
-                    points=0, severity="minor"
-                ))
+        findings.append(_finding(
+            "info", "Signature Detected",
+            f"Found signature region in document (bbox: {x},{y} {bw}x{bh})",
+            points=0, severity="minor"
+        ))
+        location = "bottom" if y > h * 0.5 else "top"
+        side = "right" if x > w * 0.5 else "left" if x > w * 0.2 else "center"
+        findings.append(_finding(
+            "info", "Signature Location",
+            f"Signature detected in {location} {side}",
+            points=0, severity="minor"
+        ))
 
     except Exception as e:
         findings.append(_finding(
@@ -564,6 +435,7 @@ def analyze_signatures(image_path, output_dir=None):
     return {
         "status": status,
         "score": total_score,
+        "deduction": abs(total_score),
         "findings": findings,
         "signatures_count": signatures_detected,
         "signature_details": sig_details,

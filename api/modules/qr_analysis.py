@@ -216,6 +216,47 @@ def analyze_single_qr(qr, index):
     return result
 
 
+def _findings_from_individual(individual, global_flags):
+    findings = []
+    for r in individual:
+        if r["status"] == "FAIL":
+            findings.append({
+                "type": "error",
+                "title": "QR Code Invalid",
+                "detail": r.get("details", "QR code failed validation"),
+                "points": 15,
+                "severity": "high",
+                "field_location": f"QR #{r['index']+1}",
+            })
+        elif r["status"] == "WARN":
+            findings.append({
+                "type": "warning",
+                "title": "QR Code Suspicious",
+                "detail": r.get("details", "QR code has suspicious characteristics"),
+                "points": 5,
+                "severity": "medium",
+                "field_location": f"QR #{r['index']+1}",
+            })
+        else:
+            findings.append({
+                "type": "info",
+                "title": "QR Code Verified",
+                "detail": r.get("details", "QR code decoded successfully"),
+                "points": 0,
+                "severity": "minor",
+                "field_location": f"QR #{r['index']+1}",
+            })
+    if "DUPLICATE_QR_DATA" in global_flags:
+        findings.append({
+            "type": "error",
+            "title": "Duplicate QR Data",
+            "detail": "Multiple QR codes contain identical data — possible copy-paste forgery",
+            "points": 15,
+            "severity": "high",
+        })
+    return findings
+
+
 def analyse_qr(file_path):
     all_qrs, qr_dbg = detect_all_qrs(file_path)
 
@@ -226,6 +267,7 @@ def analyse_qr(file_path):
             "qr_count": 0,
             "details": "No QR code detected in this document. This is normal for many document types.",
             "individual_results": [],
+            "findings": [],
             "flags": [],
         }
 
@@ -250,6 +292,8 @@ def analyse_qr(file_path):
         overall_status = "OK"
         deduction = 0
 
+    findings = _findings_from_individual(individual, global_flags)
+
     summary_parts = []
     for r in individual:
         summary_parts.append(f"QR {r['index']+1}: {r['status']} -- {r['details']}")
@@ -262,6 +306,7 @@ def analyse_qr(file_path):
         "deduction": deduction,
         "qr_count": len(all_qrs),
         "details": summary,
+        "findings": findings,
         "individual_results": individual,
         "flags": global_flags,
         "_dbg": qr_dbg,

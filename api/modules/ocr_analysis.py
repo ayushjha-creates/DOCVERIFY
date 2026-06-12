@@ -340,6 +340,7 @@ def analyze_ocr(image_path):
     return {
         "status": status,
         "score": total_score,
+        "deduction": abs(total_score),
         "findings": findings,
         "text": text if 'text' in dir() and isinstance(text, str) else "",
     }

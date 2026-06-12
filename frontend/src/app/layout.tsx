@@ -1,16 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "DOCVERIFY AI - Document Authenticity Verifier",
@@ -27,8 +16,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}>
-      <body className="min-h-full flex flex-col">{children}</body>
+    <html lang="en" className="h-full antialiased dark">
+      <head>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+        <script src="https://cdn.tailwindcss.com" />
+      </head>
+      <body className="min-h-full flex flex-col" style={{ fontFamily: "'Inter', sans-serif", background: "#000", color: "#fff" }}>{children}</body>
     </html>
   );
 }

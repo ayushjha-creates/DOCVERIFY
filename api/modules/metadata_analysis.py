@@ -91,7 +91,7 @@ def analyze_metadata(file_path):
                 findings.append(_finding(
                     "warning", "Suspicious Producer Detected",
                     f"PDF produced by '{producer}' — online PDF tools are commonly used to reconstruct tampered documents",
-                    points=15, severity="high", field_location="producer"
+                    points=25, severity="high", field_location="producer"
                 ))
                 suspicious = True
                 score -= 15
@@ -103,7 +103,7 @@ def analyze_metadata(file_path):
                 findings.append(_finding(
                     "warning", "Future Timestamp Detected",
                     f"PDF {label} date ({dt.date()}) is in the future — document metadata has been altered",
-                    points=20, severity="high", field_location=f"pdf_{label}_date"
+                    points=30, severity="high", field_location=f"pdf_{label}_date"
                 ))
                 suspicious = True
                 score -= 20
@@ -120,7 +120,7 @@ def analyze_metadata(file_path):
                             "A legitimate historical document would carry its original creation date. "
                             "Same-day creation with an online PDF tool strongly suggests the document was "
                             "reconstructed or exported immediately before submission.",
-                            points=10, severity="high", field_location="creationDate"
+                            points=15, severity="high", field_location="creationDate"
                         ))
                         suspicious = True
                         score -= 10
@@ -134,7 +134,7 @@ def analyze_metadata(file_path):
                     "warning", "Date Mismatch Between PDF Fields",
                     f"PDF creation ({pdf_created.date()}) and modification ({pdf_modified.date()}) dates "
                     f"differ by {gap_days} days — these are set by the authoring software and should match",
-                    points=10, severity="medium", field_location="creationDate/modDate"
+                    points=15, severity="medium", field_location="creationDate/modDate"
                 ))
                 suspicious = True
                 score -= 10
@@ -146,7 +146,7 @@ def analyze_metadata(file_path):
                     "warning", "Modified Before Creation",
                     f"PDF modification date ({pdf_modified.date()}) is before creation date "
                     f"({pdf_created.date()}) — logically impossible, metadata has been tampered with",
-                    points=15, severity="high", field_location="creationDate/modDate"
+                    points=25, severity="high", field_location="creationDate/modDate"
                 ))
                 suspicious = True
                 score -= 15
@@ -159,18 +159,6 @@ def analyze_metadata(file_path):
                     "warning", "Unusual Modification Hour",
                     f"PDF was last modified at {pdf_modified.strftime('%H:%M')} — unlikely for legitimate document creation",
                     points=5, severity="medium", field_location="modDate"
-                ))
-                suspicious = True
-                score -= 5
-
-        # ── 7. WEEKEND_MODIFICATION ──
-        if pdf_modified:
-            weekday = pdf_modified.weekday()
-            if weekday >= 5:
-                findings.append(_finding(
-                    "warning", "Weekend Modification",
-                    f"PDF was last modified on a {pdf_modified.strftime('%A')} — unusual for official documents",
-                    points=5, severity="low", field_location="modDate"
                 ))
                 suspicious = True
                 score -= 5
@@ -221,6 +209,11 @@ def analyze_metadata(file_path):
             summary_parts.append(f"Producer: {producer}")
         if not summary_parts:
             summary_parts.append("No creator/producer metadata")
+            findings.append(_finding(
+                "warning", "Missing Document Metadata",
+                "No creator or producer metadata found — the document may have been generated without standard metadata",
+                points=10, severity="medium", field_location="creator/producer"
+            ))
         findings.append(_finding(
             "info", "PDF Metadata Extracted",
             " | ".join(summary_parts),
@@ -281,9 +274,9 @@ def analyze_metadata(file_path):
             else:
                 if ext in ['.jpg', '.jpeg', '.tiff']:
                     findings.append(_finding(
-                        "info", "No EXIF Data",
-                        "Image has no EXIF metadata — this is normal for many document types",
-                        points=0, severity="minor"
+                        "warning", "Missing Image Metadata",
+                        "Image has no EXIF metadata — may indicate re-encoding or stripped metadata",
+                        points=10, severity="medium"
                     ))
         except Exception as e:
             findings.append(_finding(
@@ -293,11 +286,13 @@ def analyze_metadata(file_path):
             ))
 
     status = "suspicious" if suspicious else "clean"
+
     total_score = min(score, 0)
 
     return {
         "status": status,
         "score": total_score,
+        "deduction": abs(total_score),
         "findings": findings,
         "metadata": metadata,
     }

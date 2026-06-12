@@ -81,7 +81,7 @@ export function DetailedReport({ findings, deductions }: DetailedReportProps) {
     <div className="space-y-5">
       {moduleEntries.map(([key, label]) => {
         const items = findings[key] || [];
-        const deduction = deductions[key] || 0;
+        const deduction = (deductions && deductions[key]) || 0;
 
         const hasError = items.some((f) => f.type === "error");
         const hasWarning = items.some((f) => f.type === "warning");

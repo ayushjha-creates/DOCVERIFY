@@ -235,10 +235,10 @@ def detect_blur_edges(image_path):
             mean_blur = np.mean(blur_array)
             std_blur = np.std(blur_array)
             anomalies = blur_array[blur_array < mean_blur - 1.5 * std_blur]
-            if laplacian_var > 1400:
+            if laplacian_var > 3500:
                 findings.append(_finding(
                     "warning", "Unnatural Sharpness",
-                    f"Laplacian variance is {laplacian_var:.1f} (>1400). "
+                    f"Laplacian variance is {laplacian_var:.1f} (>3500). "
                     "Extremely high sharpness values suggest AI-generated or "
                     "synthetic image content rather than a natural scan.",
                     points=10, severity="high"
@@ -281,7 +281,7 @@ def detect_blur_edges(image_path):
 # ── AI-Generated Document Detection ──
 
 
-def detect_ai_smooth_background(gray):
+def detect_ai_smooth_background(gray, threshold=3.0):
     findings = []
     score = 0
     try:
@@ -294,19 +294,12 @@ def detect_ai_smooth_background(gray):
                 patches.append(np.std(patch))
         if patches:
             mean_std = float(np.mean(patches))
-            if mean_std < 6.0:
+            if mean_std < threshold:
                 findings.append(_finding(
                     "warning", "AI: Unnaturally Smooth Background",
-                    f"Background texture variance is {mean_std:.2f} (threshold: <6.0). "
+                    f"Background texture variance is {mean_std:.2f} (threshold: <{threshold}). "
                     "AI-generated images often have perfectly uniform backgrounds "
                     "lacking the sensor noise found in camera/scanner captures.",
-                    points=15, severity="high"
-                ))
-                score -= 15
-            elif mean_std < 10.0:
-                findings.append(_finding(
-                    "warning", "AI: Suspiciously Smooth Background",
-                    f"Background texture variance is {mean_std:.2f} — lower than typical scanned documents",
                     points=5, severity="medium"
                 ))
                 score -= 5
@@ -336,21 +329,14 @@ def detect_ai_perfect_borders(gray):
             if strip.size == 0:
                 continue
             edge_ratio = float(np.sum(strip > 0)) / strip.size
-            if edge_ratio < 0.005:
+            if edge_ratio < 0.002:
                 perfect_count += 1
-        if perfect_count >= 3:
+        if perfect_count == 4:
             findings.append(_finding(
                 "warning", "AI: Pixel-Perfect Borders",
-                f"{perfect_count}/4 document borders have near-zero edge activity. "
+                f"All 4 document borders have near-zero edge activity. "
                 "AI-generated documents often produce mathematically perfect borders "
                 "that lack the slight imperfections of scanned/captured documents.",
-                points=10, severity="high"
-            ))
-            score -= 10
-        elif perfect_count >= 2:
-            findings.append(_finding(
-                "warning", "AI: Suspiciously Clean Borders",
-                f"{perfect_count}/4 borders appear unnaturally clean",
                 points=5, severity="medium"
             ))
             score -= 5
@@ -380,16 +366,16 @@ def detect_ai_rendered_text(gray):
         if hist_sum > 0:
             top2 = sorted(hist, reverse=True)[:2]
             coherence = (top2[0] + top2[1]) / hist_sum
-            if coherence > 0.80:
+            if coherence > 0.90:
                 findings.append(_finding(
                     "warning", "AI: Rendered Text Texture",
-                    f"Gradient direction coherence is {coherence:.2f} (>0.80). "
+                    f"Gradient direction coherence is {coherence:.2f} (>0.90). "
                     "AI-generated text often has unnaturally uniform stroke directions "
                     "compared to the varied texture of scanned text.",
-                    points=15, severity="high"
+                    points=10, severity="high"
                 ))
-                score -= 15
-            elif coherence > 0.70:
+                score -= 10
+            elif coherence > 0.82:
                 findings.append(_finding(
                     "warning", "AI: Suspicious Text Texture",
                     f"Gradient direction coherence is {coherence:.2f}",
@@ -412,19 +398,12 @@ def detect_ai_unnatural_colour(img_bgr):
         hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
         saturation = hsv[:, :, 1].astype(np.float32) / 255.0
         sat_mean = float(np.mean(saturation))
-        if sat_mean < 0.03:
+        if sat_mean < 0.015:
             findings.append(_finding(
                 "warning", "AI: Unnatural Colour Distribution",
-                f"Mean saturation is {sat_mean:.4f} (<0.03). "
+                f"Mean saturation is {sat_mean:.4f} (<0.015). "
                 "AI-generated documents often have compressed, unnatural colour "
                 "distributions that lack the slight colour variation of real documents.",
-                points=10, severity="high"
-            ))
-            score -= 10
-        elif sat_mean < 0.06:
-            findings.append(_finding(
-                "warning", "AI: Suspicious Colour Distribution",
-                f"Mean saturation is {sat_mean:.4f}",
                 points=5, severity="medium"
             ))
             score -= 5
@@ -463,18 +442,11 @@ def detect_inconsistent_resolution(img_bgr):
             ring_energies.append(energy)
         if ring_energies and max(ring_energies) > 0:
             ring_ratio = max(ring_energies) / (min(ring_energies) + 1e-8)
-            if ring_ratio > 50:
+            if ring_ratio > 100:
                 findings.append(_finding(
                     "warning", "AI: Inconsistent Resolution",
                     f"Frequency band energy ratio is {ring_ratio:.1f} — suggests "
                     "mixed-resolution content typical of AI generation or compositing.",
-                    points=10, severity="high"
-                ))
-                score -= 10
-            elif ring_ratio > 20:
-                findings.append(_finding(
-                    "warning", "AI: Slightly Inconsistent Resolution",
-                    f"Frequency band energy ratio is {ring_ratio:.1f}",
                     points=5, severity="medium"
                 ))
                 score -= 5
@@ -487,7 +459,7 @@ def detect_inconsistent_resolution(img_bgr):
     return findings, score
 
 
-def analyze_tampering(image_path, output_dir=None):
+def analyze_tampering(image_path, output_dir=None, doc_class="unknown"):
     if not CV2_AVAILABLE:
         return {"status": "error", "score": 0, "findings": [{"type": "error", "title": "Tampering Unavailable", "detail": "OpenCV not available", "points": 0, "severity": "high"}], "marked_image_path": None}
 
@@ -513,11 +485,21 @@ def analyze_tampering(image_path, output_dir=None):
                 img_bgr = cv2.cvtColor(img_bgr, cv2.COLOR_RGB2BGR)
         gray_ai = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
 
-        findings_ai_bg, score_ai_bg = detect_ai_smooth_background(gray_ai)
-        findings_ai_borders, score_ai_borders = detect_ai_perfect_borders(gray_ai)
+        bg_threshold = 2.0 if doc_class == "system" else 3.0
+        findings_ai_bg, score_ai_bg = detect_ai_smooth_background(gray_ai, threshold=bg_threshold)
+
+        if doc_class == "system":
+            findings_ai_borders, score_ai_borders = [], 0
+        else:
+            findings_ai_borders, score_ai_borders = detect_ai_perfect_borders(gray_ai)
+
         findings_ai_text, score_ai_text = detect_ai_rendered_text(gray_ai)
         findings_ai_colour, score_ai_colour = detect_ai_unnatural_colour(img_bgr)
-        findings_ai_res, score_ai_res = detect_inconsistent_resolution(img_bgr)
+
+        if doc_class == "system":
+            findings_ai_res, score_ai_res = [], 0
+        else:
+            findings_ai_res, score_ai_res = detect_inconsistent_resolution(img_bgr)
     except Exception as e:
         findings_ai_bg, score_ai_bg = [], 0
         findings_ai_borders, score_ai_borders = [], 0
@@ -525,22 +507,54 @@ def analyze_tampering(image_path, output_dir=None):
         findings_ai_colour, score_ai_colour = [], 0
         findings_ai_res, score_ai_res = [], 0
 
-    all_findings.extend(findings_ela)
-    all_findings.extend(findings_noise)
-    all_findings.extend(findings_cp)
-    all_findings.extend(findings_blur)
-    all_findings.extend(findings_ai_bg)
-    all_findings.extend(findings_ai_borders)
-    all_findings.extend(findings_ai_text)
-    all_findings.extend(findings_ai_colour)
-    all_findings.extend(findings_ai_res)
+    # ── Collect AI flag names from findings ──
+    ai_flag_map = {
+        "AI: Unnaturally Smooth Background": "AI_SMOOTH_BACKGROUND",
+        "AI: Pixel-Perfect Borders": "AI_PERFECT_BORDERS",
+        "AI: Rendered Text Texture": "AI_RENDERED_TEXT",
+        "AI: Unnatural Colour Distribution": "AI_UNNATURAL_COLOUR",
+        "AI: Inconsistent Resolution": "INCONSISTENT_RESOLUTION",
+    }
+    ai_flags = []
+    for f_text, f_name in ai_flag_map.items():
+        for ff in all_findings:
+            if ff.get("title") == f_text and ff.get("points", 0) > 0:
+                ai_flags.append(f_name)
+                break
 
-    ai_suspicious = bool(score_ai_bg < 0 or score_ai_borders < 0 or
-                         score_ai_text < 0 or score_ai_colour < 0 or score_ai_res < 0)
+    # ── Non-AI deduction (ELA + noise + copy-paste + blur) ──
+    non_ai_score = score_ela + score_noise + score_cp + score_blur
+    non_ai_deduction = abs(min(non_ai_score, 0))
 
-    total_score = score_ela + score_noise + score_cp + score_blur
-    total_score += score_ai_bg + score_ai_borders + score_ai_text + score_ai_colour + score_ai_res
-    final_suspicious = noise_susp or cp_susp or blur_susp or (score_ela < -10) or ai_suspicious
+    # ── AI deduction based on multi-signal rule ──
+    if len(ai_flags) == 0:
+        ai_deduction = 0
+    elif len(ai_flags) == 1:
+        ai_deduction = 0
+    elif len(ai_flags) == 2:
+        ai_deduction = 10
+    elif len(ai_flags) == 3:
+        ai_deduction = 20
+    else:
+        ai_deduction = 30
+
+    # ── Remove low-weight single AI findings from the output ──
+    LOW_WEIGHT_AI = {"AI_SMOOTH_BACKGROUND", "AI_PERFECT_BORDERS", "AI_UNNATURAL_COLOUR", "INCONSISTENT_RESOLUTION"}
+    if len(ai_flags) == 1 and ai_flags[0] in LOW_WEIGHT_AI:
+        flag_title_lookup = {v: k for k, v in ai_flag_map.items()}
+        removed_title = flag_title_lookup.get(ai_flags[0])
+        all_findings = [f for f in all_findings if f.get("title") != removed_title]
+
+    total_deduction = ai_deduction + non_ai_deduction
+
+    # ── Status ──
+    has_real_tamper = noise_susp or cp_susp or blur_susp or (score_ela < -10)
+    if len(ai_flags) >= 3 or has_real_tamper:
+        status = "tampered"
+    elif len(ai_flags) >= 1 or non_ai_score < 0:
+        status = "suspicious"
+    else:
+        status = "clean"
 
     if ela_path:
         marked_image_path = ela_path
@@ -552,12 +566,14 @@ def analyze_tampering(image_path, output_dir=None):
             points=0, severity="minor"
         ))
 
-    status = "tampered" if final_suspicious else "clean"
-    total_score = max(total_score, -60)
+    score_value = -(total_deduction)
+    score_value = max(score_value, -60)
 
     return {
         "status": status,
-        "score": total_score,
+        "score": score_value,
+        "deduction": abs(score_value),
         "findings": all_findings,
+        "flags": ai_flags,
         "marked_image_path": marked_image_path
     }
