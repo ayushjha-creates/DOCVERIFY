@@ -5,12 +5,13 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface UploadSectionProps {
-  onFileSelect: (file: File) => void;
+  onFileSelect: (file: File, source: "upload" | "camera") => void;
 }
 
 export function UploadSection({ onFileSelect }: UploadSectionProps) {
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -40,7 +41,7 @@ export function UploadSection({ onFileSelect }: UploadSectionProps) {
           f.type === "application/pdf" ||
           f.type.startsWith("image/")
       );
-      if (file) onFileSelect(file);
+      if (file) onFileSelect(file, "upload");
     },
     [onFileSelect]
   );
@@ -49,67 +50,100 @@ export function UploadSection({ onFileSelect }: UploadSectionProps) {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) onFileSelect(file);
+    if (file) onFileSelect(file, "upload");
+  };
+
+  const handleCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) onFileSelect(file, "camera");
   };
 
   return (
-    <div
-      className={cn(
-        "relative flex flex-col items-center justify-center w-full max-w-xl mx-auto p-12 rounded-2xl border-2 border-dashed transition-all duration-300 cursor-pointer",
-        dragging
-          ? "border-primary bg-primary/5 scale-[1.02]"
-          : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30"
-      )}
-      onDragEnter={handleDragIn}
-      onDragLeave={handleDragOut}
-      onDragOver={handleDrag}
-      onDrop={handleDrop}
-      onClick={handleClick}
-    >
+    <div>
       <input
-        ref={inputRef}
+        ref={cameraInputRef}
         type="file"
-        accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp"
-        className="hidden"
-        onChange={handleChange}
+        accept="image/*"
+        capture="environment"
+        onChange={handleCameraCapture}
+        style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", whiteSpace: "nowrap", borderWidth: 0, opacity: 0 }}
       />
-      <div className="mb-6 relative">
-        <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
-          <svg
-            className="w-10 h-10 text-primary"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
+      <div
+        className={cn(
+          "relative flex flex-col items-center justify-center w-full max-w-xl mx-auto p-12 rounded-2xl border-2 border-dashed transition-all duration-300 cursor-pointer",
+          dragging
+            ? "border-primary bg-primary/5 scale-[1.02]"
+            : "border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/30"
+        )}
+        onDragEnter={handleDragIn}
+        onDragLeave={handleDragOut}
+        onDragOver={handleDrag}
+        onDrop={handleDrop}
+        onClick={handleClick}
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp"
+          className="hidden"
+          onChange={handleChange}
+        />
+        <div className="mb-6 relative">
+          <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+            <svg
+              className="w-10 h-10 text-primary"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+              />
+            </svg>
+          </div>
+        </div>
+        <p className="text-lg font-semibold mb-2">
+          {dragging ? "Drop your document here" : "Upload Document"}
+        </p>
+        <p className="text-sm text-muted-foreground text-center mb-6 max-w-sm">
+          Drag & drop your PDF, certificate, receipt, or invoice here, or click to browse
+        </p>
+        <Button variant="default" size="lg" className="gap-2">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
-              strokeWidth={1.5}
-              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+              strokeWidth={2}
+              d="M12 4v16m8-8H4"
             />
           </svg>
-        </div>
+          Browse Files
+        </Button>
+        <p className="mt-4 text-xs text-muted-foreground">
+          Supports PDF, PNG, JPG, TIFF (max 20MB)
+        </p>
       </div>
-      <p className="text-lg font-semibold mb-2">
-        {dragging ? "Drop your document here" : "Upload Document"}
-      </p>
-      <p className="text-sm text-muted-foreground text-center mb-6 max-w-sm">
-        Drag & drop your PDF, certificate, receipt, or invoice here, or click to browse
-      </p>
-      <Button variant="default" size="lg" className="gap-2">
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M12 4v16m8-8H4"
-          />
-        </svg>
-        Browse Files
-      </Button>
-      <p className="mt-4 text-xs text-muted-foreground">
-        Supports PDF, PNG, JPG, TIFF (max 20MB)
-      </p>
+      <div className="scan-upload-row" style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "center" }}>
+        <Button variant="outline" size="sm" className="gap-2" onClick={() => cameraInputRef.current?.click()}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+          Scan with Camera
+        </Button>
+        <Button variant="outline" size="sm" className="gap-2" onClick={() => inputRef.current?.click()}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="12" y1="18" x2="12" y2="12"/>
+            <line x1="9" y1="15" x2="15" y2="15"/>
+          </svg>
+          Upload File
+        </Button>
+      </div>
     </div>
   );
 }

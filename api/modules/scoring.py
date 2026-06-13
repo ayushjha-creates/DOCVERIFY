@@ -96,7 +96,7 @@ def compute_ai_likelihood(findings: dict) -> float:
     return round(score, 2)
 
 
-def calculate_final_score(engine_results: dict, has_duplicate: bool, findings: dict = None, doc_class="unknown") -> dict:
+def calculate_final_score(engine_results: dict, has_duplicate: bool, findings: dict = None, doc_class="unknown", source="upload") -> dict:
     print("RAW ENGINE RESULTS RECEIVED:")
     for key, val in engine_results.items():
         print(f"  {key}:")
@@ -121,6 +121,19 @@ def calculate_final_score(engine_results: dict, has_duplicate: bool, findings: d
             engine_results["tamper"]["deduction"] = 0
             engine_results["tamper"]["status"] = "OK"
             print(f"[scoring] System doc: AI-only tamper flags forgiven ({tamper_titles})")
+
+    # ── Camera source: redistribute metadata weight to tamper and OCR ──
+    if source == "camera":
+        tamper_data = engine_results.get("tamper", {})
+        if tamper_data.get("status", "OK") not in ("OK", "clean"):
+            tamper_data["deduction"] = round(
+                tamper_data.get("deduction", 0) * 1.15
+            )
+        ocr_data = engine_results.get("ocr", {})
+        if ocr_data.get("status", "OK") not in ("OK", "clean"):
+            ocr_data["deduction"] = round(
+                ocr_data.get("deduction", 0) * 1.15
+            )
 
     for ek in ENGINE_KEYS:
         label = ENGINE_LABELS.get(ek, ek)

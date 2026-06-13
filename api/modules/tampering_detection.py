@@ -459,7 +459,7 @@ def detect_inconsistent_resolution(img_bgr):
     return findings, score
 
 
-def analyze_tampering(image_path, output_dir=None, doc_class="unknown"):
+def analyze_tampering(image_path, output_dir=None, doc_class="unknown", source="upload"):
     if not CV2_AVAILABLE:
         return {"status": "error", "score": 0, "findings": [{"type": "error", "title": "Tampering Unavailable", "detail": "OpenCV not available", "points": 0, "severity": "high"}], "marked_image_path": None}
 
@@ -474,6 +474,15 @@ def analyze_tampering(image_path, output_dir=None, doc_class="unknown"):
     findings_blur, score_blur, blur_susp = detect_blur_edges(image_path)
 
     # ── AI detection checks ──
+    skip_ai_checks = set()
+    if source == "camera":
+        skip_ai_checks = {
+            "AI_SMOOTH_BACKGROUND",
+            "AI_PERFECT_BORDERS",
+            "AI_RENDERED_TEXT",
+            "INCONSISTENT_RESOLUTION",
+        }
+
     try:
         if isinstance(image_path, np.ndarray):
             img_bgr = image_path.copy()
@@ -486,17 +495,24 @@ def analyze_tampering(image_path, output_dir=None, doc_class="unknown"):
         gray_ai = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
 
         bg_threshold = 2.0 if doc_class == "system" else 3.0
-        findings_ai_bg, score_ai_bg = detect_ai_smooth_background(gray_ai, threshold=bg_threshold)
+        if "AI_SMOOTH_BACKGROUND" not in skip_ai_checks:
+            findings_ai_bg, score_ai_bg = detect_ai_smooth_background(gray_ai, threshold=bg_threshold)
+        else:
+            findings_ai_bg, score_ai_bg = [], 0
 
-        if doc_class == "system":
+        if doc_class == "system" or "AI_PERFECT_BORDERS" in skip_ai_checks:
             findings_ai_borders, score_ai_borders = [], 0
         else:
             findings_ai_borders, score_ai_borders = detect_ai_perfect_borders(gray_ai)
 
-        findings_ai_text, score_ai_text = detect_ai_rendered_text(gray_ai)
+        if "AI_RENDERED_TEXT" not in skip_ai_checks:
+            findings_ai_text, score_ai_text = detect_ai_rendered_text(gray_ai)
+        else:
+            findings_ai_text, score_ai_text = [], 0
+
         findings_ai_colour, score_ai_colour = detect_ai_unnatural_colour(img_bgr)
 
-        if doc_class == "system":
+        if doc_class == "system" or "INCONSISTENT_RESOLUTION" in skip_ai_checks:
             findings_ai_res, score_ai_res = [], 0
         else:
             findings_ai_res, score_ai_res = detect_inconsistent_resolution(img_bgr)

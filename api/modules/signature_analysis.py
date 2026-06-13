@@ -276,7 +276,7 @@ def _detect_stamp_hough(img_gray):
     return stamps
 
 
-def analyze_signatures(image_path, output_dir=None, doc_class="unknown"):
+def analyze_signatures(image_path, output_dir=None, doc_class="unknown", source="upload"):
     if not CV2_AVAILABLE or not TESSERACT_AVAILABLE:
         missing = [m for m, f in [("OpenCV", CV2_AVAILABLE), ("Tesseract", TESSERACT_AVAILABLE)] if not f]
         return {
@@ -305,6 +305,23 @@ def analyze_signatures(image_path, output_dir=None, doc_class="unknown"):
                 img_pil = Image.open(image_path).convert("RGB")
                 img = np.array(img_pil)
                 img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+        # ── Deskew for camera captures ──
+        if source == "camera":
+            gray_skew = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            blurred = cv2.GaussianBlur(gray_skew, (5, 5), 0)
+            edges = cv2.Canny(blurred, 50, 150)
+            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if contours:
+                largest = max(contours, key=cv2.contourArea)
+                if cv2.contourArea(largest) > img.shape[0] * img.shape[1] * 0.3:
+                    rect = cv2.minAreaRect(largest)
+                    angle = rect[2]
+                    if 2 < abs(angle) < 45:
+                        (h_skew, w_skew) = img.shape[:2]
+                        center = (w_skew // 2, h_skew // 2)
+                        M = cv2.getRotationMatrix2D(center, angle, 1.0)
+                        img = cv2.warpAffine(img, M, (w_skew, h_skew))
 
         h, w = img.shape[:2]
         original_for_draw = img.copy()

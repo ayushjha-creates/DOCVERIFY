@@ -56,9 +56,12 @@ export interface AnalysisResult {
   };
 }
 
-export async function analyzeDocument(file: File): Promise<AnalysisResult> {
+export async function analyzeDocument(file: File, source?: string): Promise<AnalysisResult> {
   const formData = new FormData();
   formData.append("file", file);
+  if (source) {
+    formData.append("source", source);
+  }
 
   const token = typeof window !== "undefined" ? localStorage.getItem("docverify_token") : null;
   const headers: HeadersInit = {};

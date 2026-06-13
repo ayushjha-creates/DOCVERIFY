@@ -100,12 +100,14 @@ export default function HomePage() {
 
   // --- File state ---
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [source, setSource] = useState<"upload" | "camera">("upload");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleFile = useCallback((file: File | null, fileSource: "upload" | "camera") => {
     if (file) {
       setSelectedFile(file);
+      setSource(fileSource);
       setError("");
     }
   }, []);
@@ -143,6 +145,7 @@ export default function HomePage() {
 
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("source", source);
 
     const headers: Record<string, string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -171,11 +174,12 @@ export default function HomePage() {
       setAnalyzing(false);
       setError(err.message || "Analysis failed");
     }
-  }, [token]);
+  }, [token, source]);
 
   const goHome = useCallback(() => {
     setResults(null);
     setSelectedFile(null);
+    setSource("upload");
     if (fileInputRef.current) fileInputRef.current.value = "";
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, []);
@@ -256,8 +260,11 @@ export default function HomePage() {
         ))}
       </div>
 
+      <input type="file" ref={cameraInputRef} accept="image/*" capture="environment"
+        onChange={(e) => handleFile(e.target.files?.[0] || null, "camera")}
+        style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", whiteSpace: "nowrap", borderWidth: 0, opacity: 0 }} />
       <input type="file" ref={fileInputRef} accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp" style={{ display: "none" }}
-        onChange={handleFileChange} />
+        onChange={(e) => handleFile(e.target.files?.[0] || null, "upload")} />
 
       {/* Navbar */}
       <nav style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(255,255,255,0.05)" }}
@@ -326,6 +333,19 @@ export default function HomePage() {
                     <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", position: "relative", zIndex: 1 }}>
                       {selectedFile ? Math.round(selectedFile.size / 1024) > 1024 ? (Math.round(selectedFile.size / 1024) / 1024).toFixed(1) + " MB" : Math.round(selectedFile.size / 1024) + " KB" : "PDF \u00B7 PNG \u00B7 JPG \u00B7 TIFF"}
                     </div>
+                  </div>
+
+                  <div className="scan-upload-row" style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                    <button onClick={() => cameraInputRef.current?.click()}
+                      style={{ flex: 1, padding: "10px 16px", borderRadius: 12, background: "rgba(0,200,255,0.1)", border: "1px solid rgba(0,200,255,0.25)", color: "#5dd5ff", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                      Scan with Camera
+                    </button>
+                    <button onClick={() => fileInputRef.current?.click()}
+                      style={{ flex: 1, padding: "10px 16px", borderRadius: 12, background: "rgba(245,166,35,0.1)", border: "1px solid rgba(245,166,35,0.25)", color: "#F5A623", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                      Upload Document
+                    </button>
                   </div>
 
                   {error && (
@@ -466,6 +486,18 @@ export default function HomePage() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
                 Back to Home
               </button>
+              {source === "camera" && (
+                <div style={{
+                  background: "rgba(0,200,255,0.1)",
+                  border: "1px solid rgba(0,200,255,0.3)",
+                  borderRadius: 8, padding: "8px 12px",
+                  fontSize: 12, marginBottom: 12, color: "#5dd5ff",
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                  Analyzed from camera scan — metadata timestamp checks were skipped. Score is based on visual and content analysis only.
+                </div>
+              )}
               <h1 style={{ fontSize: 32, fontWeight: 800, marginBottom: 8 }}>Analysis Complete</h1>
               <p style={{ color: "rgba(255,255,255,0.5)", fontSize: 15 }}>{results.filename}</p>
               {r.analyzed_pages > 1 && (
@@ -484,7 +516,7 @@ export default function HomePage() {
               </div>
 
               {/* Module Status Cards */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div className="results-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                 {[
                   ["metadata", r.metadata_status],
                   ["ocr", r.ocr_status],
@@ -559,7 +591,7 @@ export default function HomePage() {
               )}
 
               {/* Actions */}
-              <div className="result-card" style={{ background: "#111827", borderRadius: 16, border: "1px solid rgba(255,255,255,0.06)", padding: 24, display: "flex", gap: 12, justifyContent: "center" }}>
+              <div className="result-card result-actions" style={{ background: "#111827", borderRadius: 16, border: "1px solid rgba(255,255,255,0.06)", padding: 24, display: "flex", gap: 12, justifyContent: "center" }}>
                 <button onClick={() => r.report_b64 && downloadReport(r.report_b64!, results.filename)}
                   style={{ background: "linear-gradient(135deg,#F5A623,#D4870A)", color: "#000", padding: "12px 28px", borderRadius: 9999, fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
@@ -627,7 +659,7 @@ export default function HomePage() {
             style={{ position: "fixed", top: 20, right: 24, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.4)", width: 40, height: 40, borderRadius: "50%", fontSize: 20, cursor: "pointer", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
             &times;
           </button>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", minHeight: "100vh" }}>
+          <div className="login-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", minHeight: "100vh" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "48px 40px" }}>
               <div style={{ width: "100%", maxWidth: 440 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 40 }}>

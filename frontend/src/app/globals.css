@@ -128,3 +128,184 @@
     @apply font-sans;
   }
 }
+
+/* ═══════════════════════════════════════════════════
+   RESPONSIVE OVERRIDES FOR MOBILE
+   Overrides inline-styled components via class names.
+   Uses !important where inline styles win specificity.
+   ═══════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+
+  /* ── PREVENT HORIZONTAL OVERFLOW ── */
+  html, body {
+    overflow-x: hidden !important;
+    max-width: 100vw !important;
+  }
+
+  /* ── NAVBAR ── */
+  nav.fixed {
+    height: auto !important;
+    min-height: 56px !important;
+  }
+  nav.fixed > div {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+  .nav-links {
+    gap: 12px !important;
+    order: 3 !important;
+    width: 100% !important;
+    justify-content: flex-start !important;
+    padding: 4px 0 !important;
+  }
+  .btn-gold {
+    padding: 7px 16px !important;
+    font-size: 13px !important;
+  }
+
+  /* ── HERO ── */
+  .hero-section {
+    padding-top: 100px !important;
+    padding-bottom: 40px !important;
+    min-height: auto !important;
+  }
+  .hero-layout {
+    flex-direction: column !important;
+    gap: 32px !important;
+  }
+  .hero-headline {
+    font-size: clamp(30px, 10vw, 48px) !important;
+    line-height: 1.1 !important;
+  }
+  .hero-right {
+    max-width: 100% !important;
+  }
+  .hero-right > div {
+    max-width: 100% !important;
+  }
+
+  /* ── SCAN / UPLOAD BUTTON ROW (HIGH PRIORITY) ── */
+  .scan-upload-row {
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+  .scan-upload-row button,
+  .scan-upload-row .btn-gold {
+    width: 100% !important;
+    min-height: 48px !important;
+    font-size: 15px !important;
+  }
+
+  /* ── VERIFY BUTTON ── */
+  .verify-btn-wrap {
+    width: 100% !important;
+  }
+  .verify-btn-wrap > button {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 56px !important;
+    font-size: 16px !important;
+  }
+  .pulse-ring {
+    display: none !important;
+  }
+  .verify-stat {
+    font-size: 11px !important;
+    padding: 6px 10px !important;
+  }
+
+  /* ── HOW IT WORKS SECTION ── */
+  #how-it-works {
+    padding: 48px 16px !important;
+  }
+  #how-it-works h2:first-of-type {
+    font-size: 26px !important;
+  }
+  #how-it-works h3 {
+    font-size: 18px !important;
+  }
+  /* Remove left margin on step descriptions and subs grids */
+  #how-it-works [style*="margin-left: 56px"] {
+    margin-left: 0 !important;
+  }
+
+  /* ── RESULTS SECTION ── */
+  .results-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .result-card {
+    padding: 16px !important;
+  }
+  .result-actions {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  .result-actions button {
+    width: 100% !important;
+  }
+
+  /* ── PRICING OVERLAY ── */
+  .pricing-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+  .overlay-inner h2 {
+    font-size: 28px !important;
+  }
+
+  /* ── LOGIN OVERLAY ── */
+  .login-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .login-grid > div:first-child {
+    padding: 32px 20px !important;
+  }
+  .login-grid > div:last-child {
+    display: none !important;
+  }
+  .login-grid h1 {
+    font-size: 28px !important;
+  }
+  .login-grid [style*="grid-template-columns: 1fr 1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ── ANALYZING OVERLAY ── */
+  .analyzing-overlay > div {
+    max-width: 320px !important;
+    padding: 0 20px !important;
+  }
+
+  /* ── GENERAL TEXT SCALING ── */
+  body {
+    font-size: 14px !important;
+  }
+
+  /* ── RESPONSIVE MEDIA ── */
+  img, video, canvas, svg {
+    max-width: 100% !important;
+    height: auto !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-headline {
+    font-size: clamp(24px, 11vw, 34px) !important;
+  }
+  .result-card {
+    padding: 12px !important;
+  }
+  .verify-stat {
+    font-size: 10px !important;
+    padding: 4px 8px !important;
+  }
+  .nav-links {
+    gap: 8px !important;
+  }
+  .nav-links .nav-link {
+    font-size: 13px !important;
+  }
+}

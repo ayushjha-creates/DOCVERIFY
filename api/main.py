@@ -115,7 +115,7 @@ try:
 except OSError:
     pass  # read-only FS on Vercel
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from db import init_db, get_db
@@ -204,7 +204,7 @@ def debug_check():
 
 
 @app.post("/analyze")
-async def analyze_document(file: UploadFile = File(...), current_user: dict = Depends(get_current_user_optional)):
+async def analyze_document(file: UploadFile = File(...), source: str = Form("upload"), current_user: dict = Depends(get_current_user_optional)):
     session_id = str(uuid.uuid4())
     workdir = f"/tmp/{session_id}"
     os.makedirs(workdir, exist_ok=True)
@@ -258,7 +258,7 @@ async def analyze_document(file: UploadFile = File(...), current_user: dict = De
         # Metadata
         try:
             meta_mod = importlib.import_module("modules.metadata_analysis")
-            meta_result = meta_mod.analyze_metadata(file_path)
+            meta_result = meta_mod.analyze_metadata(file_path, source=source)
         except Exception as e:
             meta_result = {"status": "error", "score": 0, "findings": [{"type": "error", "title": "Metadata unavailable", "detail": str(e), "points": 0, "severity": "high"}]}
         results["metadata"] = meta_result
@@ -294,7 +294,7 @@ async def analyze_document(file: UploadFile = File(...), current_user: dict = De
             # Tampering
             try:
                 tamper_mod = importlib.import_module("modules.tampering_detection")
-                tr = tamper_mod.analyze_tampering(page_img, output_dir=workdir, doc_class=doc_class)
+                tr = tamper_mod.analyze_tampering(page_img, output_dir=workdir, doc_class=doc_class, source=source)
             except Exception as e:
                 tr = {"status": "error", "score": 0, "findings": [{"type": "error", "title": "Tampering unavailable", "detail": str(e), "points": 0, "severity": "high", "page": page_num}]}
             if tr:
@@ -310,7 +310,7 @@ async def analyze_document(file: UploadFile = File(...), current_user: dict = De
             # Signatures
             try:
                 sig_mod = importlib.import_module("modules.signature_analysis")
-                sr = sig_mod.analyze_signatures(page_img, output_dir=workdir, doc_class=doc_class)
+                sr = sig_mod.analyze_signatures(page_img, output_dir=workdir, doc_class=doc_class, source=source)
             except Exception as e:
                 sr = {"status": "error", "score": 0, "findings": [{"type": "error", "title": "Signature unavailable", "detail": str(e), "points": 0, "severity": "high", "page": page_num}], "signatures_count": 0, "signature_details": []}
             if sr:
@@ -401,7 +401,7 @@ async def analyze_document(file: UploadFile = File(...), current_user: dict = De
         # Scoring
         try:
             score_mod = importlib.import_module("modules.scoring")
-            score_result = score_mod.calculate_final_score(engine_results, has_duplicate, findings, doc_class=doc_class)
+            score_result = score_mod.calculate_final_score(engine_results, has_duplicate, findings, doc_class=doc_class, source=source)
         except Exception as e:
             print(f"[scoring] Error: {e}", flush=True)
             import traceback as tb

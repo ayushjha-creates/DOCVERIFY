@@ -56,7 +56,30 @@ def _parse_pdf_date(date_str):
         return None
 
 
-def analyze_metadata(file_path):
+def analyze_metadata(file_path, source="upload"):
+    if source == "camera":
+        return {
+            "status": "OK",
+            "deduction": 0,
+            "score": 0,
+            "findings": [{
+                "type": "info",
+                "title": "Camera Capture — Metadata Skipped",
+                "detail": (
+                    "This document was captured via camera scan. "
+                    "Timestamp and producer metadata reflects the scan event, "
+                    "not the original document's issuance date, and is not used "
+                    "for authenticity scoring."
+                ),
+                "points": 0,
+                "severity": "minor",
+            }],
+            "metadata": {
+                "capture_method": "camera",
+                "note": "Metadata checks bypassed for camera captures",
+            },
+        }
+
     findings = []
     metadata = {}
     suspicious = False
