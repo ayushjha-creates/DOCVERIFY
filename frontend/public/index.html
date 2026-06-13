@@ -26,6 +26,7 @@
     @keyframes pulse-ring { 0% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; } 100% { transform: translate(-50%, -50%) scale(1.6); opacity: 0; } }
     @keyframes scan-line { 0% { top: 0; } 100% { top: 100%; } }
     @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+    @keyframes fade-in-up { 0% { opacity: 0; transform: translateY(16px); } 100% { opacity: 1; transform: translateY(0); } }
     @keyframes orbit-dot { 0%, 100% { transform: translate(0, 0); opacity: 0.6; } 25% { transform: translate(12px, -18px); opacity: 1; } 50% { transform: translate(-8px, -30px); opacity: 0.4; } 75% { transform: translate(-20px, -10px); opacity: 0.8; } }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     .verify-widget { width: 100%; max-width: 340px; margin: 0 auto; position: relative; }
@@ -44,6 +45,13 @@
     .pulse-ring { position: absolute; top: 50%; left: 50%; width: 280px; height: 64px; border-radius: 9999px; border: 2px solid #F5A623; transform: translate(-50%, -50%) scale(1); opacity: 0; pointer-events: none; }
     .pulse-ring:nth-child(2) { animation: pulse-ring 2.5s ease-out infinite; }
     .pulse-ring:nth-child(3) { animation: pulse-ring 2.5s ease-out 0.8s infinite; }
+    .verify-badge { display: inline-flex; align-items: center; gap: 8px; padding: 8px 18px; border-radius: 9999px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.6); margin-top: 20px; animation: float 3s ease-in-out infinite; }
+    .verify-badge .green-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; display: inline-block; flex-shrink: 0; }
+    .verify-stats { display: flex; gap: 8px; margin-top: 16px; justify-content: center; }
+    .verify-stat { padding: 8px 14px; border-radius: 9999px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.06); font-size: 12px; font-weight: 500; color: #fff; display: flex; align-items: center; gap: 5px; opacity: 0; animation: fade-in-up 0.6s ease forwards; }
+    .verify-stat:nth-child(1) { animation-delay: 0.1s; }
+    .verify-stat:nth-child(2) { animation-delay: 0.3s; }
+    .verify-stat:nth-child(3) { animation-delay: 0.5s; }
     .orbit-dot { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: #F5A623; box-shadow: 0 0 6px #F5A623; pointer-events: none; animation: orbit-dot 5s ease-in-out infinite; }
     .overlay { position: fixed; inset: 0; z-index: 999; background: #0D0D0D; opacity: 0; pointer-events: none; transition: opacity 0.5s ease; overflow-y: auto; }
     .overlay.open { opacity: 1; pointer-events: all; }
@@ -91,7 +99,7 @@
   <nav style="background:rgba(0,0,0,0.85);backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,0.05);" class="fixed top-0 left-0 right-0 z-50 h-16 flex items-center">
     <div class="max-w-7xl mx-auto px-6 w-full flex items-center justify-between">
       <a href="#" class="flex items-center gap-3" onclick="location.reload()">
-        <img src="https://docverify-api.vercel.app/logo.jpeg" alt="DOCVERIFY AI" style="width:36px;height:36px;border-radius:8px;object-fit:cover">
+        <img src="/logo.jpeg" alt="DOCVERIFY AI" style="width:36px;height:36px;border-radius:8px;object-fit:cover">
         <span class="font-bold text-lg tracking-tight hidden sm:inline" style="color:#fff;">DOCVERIFY <span style="color:#f53c23;">AI</span></span>
       </a>
       <div class="nav-links flex items-center gap-8">
@@ -147,6 +155,16 @@
                 </span>
                 Verify Document
               </button>
+            </div>
+
+            <div class="verify-badge">
+              <span class="green-dot"></span>
+              256-bit Encrypted · Blockchain Verified
+            </div>
+            <div class="verify-stats">
+              <span class="verify-stat">&#128269; 50K+ Docs Verified</span>
+              <span class="verify-stat">&#9889; 2s Avg Speed</span>
+              <span class="verify-stat">&#128737; 99.9% Accuracy</span>
             </div>
           </div>
         </div>
