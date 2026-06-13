@@ -60,11 +60,18 @@ export async function analyzeDocument(file: File): Promise<AnalysisResult> {
   const formData = new FormData();
   formData.append("file", file);
 
+  const token = typeof window !== "undefined" ? localStorage.getItem("docverify_token") : null;
+  const headers: HeadersInit = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   let response;
   try {
     response = await fetch(`${API_BASE}/api/analyze`, {
       method: "POST",
       body: formData,
+      headers,
     });
   } catch (networkError) {
     throw new Error(`Network error: Unable to reach the server. ${networkError instanceof Error ? networkError.message : "Please check your connection."}`);

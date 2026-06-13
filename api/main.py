@@ -115,14 +115,19 @@ try:
 except OSError:
     pass  # read-only FS on Vercel
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from db import init_db, get_db
+from auth import get_current_user_optional
+from routes.auth_routes import router as auth_router
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger("docverify")
 
 app = FastAPI(title="DOCVERIFY AI API", version="1.0.0", root_path="/api")
+
+app.include_router(auth_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -131,6 +136,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+def startup():
+    init_db()
+    logger.info("Database initialized")
 
 
 def _img_to_b64(path: str) -> str:
@@ -194,7 +204,7 @@ def debug_check():
 
 
 @app.post("/analyze")
-async def analyze_document(file: UploadFile = File(...)):
+async def analyze_document(file: UploadFile = File(...), current_user: dict = Depends(get_current_user_optional)):
     session_id = str(uuid.uuid4())
     workdir = f"/tmp/{session_id}"
     os.makedirs(workdir, exist_ok=True)
@@ -455,6 +465,22 @@ async def analyze_document(file: UploadFile = File(...)):
                 "preview_b64": preview_b64,
             }
         }
+
+        if current_user:
+            try:
+                conn = get_db()
+                c = conn.cursor()
+                c.execute(
+                    "INSERT INTO analysis_history (user_id, filename, score, verdict, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (current_user["user_id"], file.filename,
+                     score_result.get("score", 0), score_result.get("verdict", "TAMPERED"),
+                     datetime.datetime.utcnow().isoformat())
+                )
+                conn.commit()
+                conn.close()
+                logger.info(f"Session {session_id}: saved to history for user {current_user['user_id']}")
+            except Exception as e:
+                logger.error(f"Session {session_id}: failed to save history: {e}")
 
         shutil.rmtree(workdir, ignore_errors=True)
         logger.info(f"Session {session_id}: complete")

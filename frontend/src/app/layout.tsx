@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AuthProvider } from "@/lib/auth-context";
 
 export const metadata: Metadata = {
   title: "DOCVERIFY AI - Document Authenticity Verifier",
@@ -21,7 +22,9 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
         <script src="https://cdn.tailwindcss.com" />
       </head>
-      <body className="min-h-full flex flex-col" style={{ fontFamily: "'Inter', sans-serif", background: "#000", color: "#fff" }}>{children}</body>
+      <body className="min-h-full flex flex-col" style={{ fontFamily: "'Inter', sans-serif", background: "#000", color: "#fff" }}>
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }

@@ -1,74 +1,68 @@
 # DOCVERIFY AI
 
- AI-powered document authenticity verification platform. Upload a document — get a forensic analysis report with authenticity score, tampering evidence, signature detection, metadata forensics, QR validation, and a blockchain-anchored verification certificate.
+AI-powered document authenticity verification platform. Upload a document — get a forensic analysis report with authenticity score, tampering evidence, signature detection, metadata forensics, QR validation, and a blockchain-anchored verification certificate.
+
+**Live:** [https://docverify-api.vercel.app](https://docverify-api.vercel.app)
 ---
 
+## Quick Demo
 
-## Overview
+```bash
+curl -X POST https://docverify-api.vercel.app/api/analyze \
+  -F "file=@sample.pdf"
+```
 
-DOCVERIFY AI analyzes documents across five parallel forensic engines to produce a comprehensive authenticity score. Users upload a document (PDF, image), and the platform returns:
-
-- **Authenticity Score** (0–100)
-- **Per-module status** (clean / suspicious / tampered)
-- **Detailed findings** with severity levels
-- **Visual evidence** (ELA heatmaps, signature highlights)
-- **Blockchain verification certificate**
-- **Downloadable PDF report**
+Response includes `score`, `verdict`, `reasons`, per-module `deductions`, `findings` with severity, base64-encoded ELA heatmaps, signature highlights, preview image, and a downloadable PDF report.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        Client Browser                        │
-│                        (Next.js SPA)                         │
-└──────────────────┬──────────────────────────────────────────┘
-                   │ POST /api/analyze (multipart/form-data)
-                   ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Vercel Services Router                     │
-│   / → frontend service    /api/* → api service (FastAPI)     │
-└──────────────────┬──────────────────────────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    FastAPI Backend (api/)                     │
-│                                                              │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐   │
-│  │  Preprocess   │  │   Metadata   │  │  OCR Analysis    │   │
-│  │  (PDF→Images) │─▶│  Analysis    │  │  (Tesseract)     │   │
-│  └──────────────┘  └──────┬───────┘  └────────┬─────────┘   │
-│                           │                    │              │
-│  ┌──────────────┐  ┌──────▼───────┐  ┌────────▼─────────┐   │
-│  │  QR Analysis  │  │  Tampering   │  │  Signature       │   │
-│  │  (pyzbar)     │  │  Detection   │  │  Analysis        │   │
-│  │               │  │  (ELA)       │  │  (Contour Detect)│   │
-│  └──────────────┘  └──────┬───────┘  └────────┬─────────┘   │
-│                           │                    │              │
-│                           ▼                    ▼              │
-│  ┌──────────────────────────────────────────────────────┐    │
-│  │                 Scoring Engine                        │    │
-│  │  Weighted aggregation of all module scores            │    │
-│  └──────────────────────────┬───────────────────────────┘    │
-│                             │                                 │
-│                             ▼                                 │
-│  ┌──────────────────────────────────────────────────────┐    │
-│  │           Blockchain Verification                      │    │
-│  │  SHA-256 hash → Timestamp → Verification URL          │    │
-│  └──────────────────────────┬───────────────────────────┘    │
-│                             │                                 │
-│                             ▼                                 │
-│  ┌──────────────────────────────────────────────────────┐    │
-│  │           PDF Report Generator                        │    │
-│  │  ReportLab → Base64-encoded downloadable PDF          │    │
-│  └──────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
+Browser (static HTML via Tailwind CSS)
+     │ POST /api/analyze (multipart/form-data)
+     ▼
+Vercel Services Router
+  / → frontend service (Next.js route → serves public/index.html)
+  /api/* → api service (FastAPI serverless function)
+     │
+     ▼
+FastAPI Backend (api/main.py)
+     │
+     ├─ 1. Preprocessing
+     │     PDF → PNG per page (PyMuPDF, 200 DPI)
+     │     Image → normalized PNG
+     │     CLAHE + denoising on each page
+     │
+     ├─ 2. Document Classifier (keyword-based)
+     │     formal: certificate, degree, passport, licence...
+     │     system: boarding pass, ticket, receipt, invoice...
+     │     unknown
+     │
+     ├─ 3. Five Analysis Engines (per page, worst-status aggregation)
+     │     ├─ Metadata Analysis (PyMuPDF / Pillow EXIF)
+     │     ├─ OCR + Text Forensics (Tesseract 5)
+     │     ├─ QR/Barcode Validation (OpenCV + pyzbar, 7-pass cascade)
+     │     ├─ Tampering Detection (ELA, SIFT, noise grid, blur, 5 AI signals)
+     │     └─ Signature Detection (3-method ink cascade)
+     │
+     ├─ 4. Scoring Engine
+     │     Weighted average → anomaly scaling → Genuine override
+     │
+     ├─ 5. Blockchain Module
+     │     SHA-256 hash + timestamp → mock block
+     │
+     └─ 6. PDF Report Generator (ReportLab)
+           Score gauge, deduction table, findings, blockchain cert
 ```
 
 ### Data Flow
 
+<<<<<<< HEAD
  1. User uploads file via browser or `curl -F`
+=======
+1. User uploads file via browser or `curl -F`
+>>>>>>> 0f1357b (Add JWT auth system, Docker setup, React page.tsx port)
 2. FastAPI writes file to `/tmp/{uuid}/original.{ext}`
 3. Preprocessing converts to PNG pages at 200 DPI, applies CLAHE + denoising
 4. Document classifier runs (keyword match on filename + OCR text)
@@ -80,6 +74,7 @@ DOCVERIFY AI analyzes documents across five parallel forensic engines to produce
 10. All results + base64-encoded images returned as JSON
 11. `/tmp/{uuid}` cleaned up
 12. Browser renders results
+<<<<<<< HEAD
 
 
 ---
@@ -448,6 +443,8 @@ Generates a downloadable PDF report using ReportLab.
 │  Final deductions cap at -50 points per module               │
 └─────────────────────────────────────────────────────────────┘
 ```
+=======
+>>>>>>> 0f1357b (Add JWT auth system, Docker setup, React page.tsx port)
 
 ---
 
@@ -455,72 +452,47 @@ Generates a downloadable PDF report using ReportLab.
 
 ```
 .
-├── api/                                    # Vercel FastAPI backend
-│   ├── bin/                                # Bundled Tesseract binary
-│   │   ├── tesseract                       # ARM64 macOS binary
-│   │   └── tessdata/                       # Language data files
-│   ├── modules/
-│   │   ├── __init__.py
-│   │   ├── preprocessing.py                # PDF/image preprocessing
-│   │   ├── metadata_analysis.py            # Metadata extraction
-│   │   ├── ocr_analysis.py                 # Tesseract OCR
-│   │   ├── qr_analysis.py                  # QR detection
-│   │   ├── tampering_detection.py          # ELA analysis
-│   │   ├── signature_analysis.py           # Contour-based detection
-│   │   ├── scoring.py                      # Score aggregation
-│   │   ├── blockchain.py                   # Verification record
-│   │   └── report_generator.py             # PDF generation
-│   ├── __init__.py
-│   ├── index.py                            # FastAPI application entrypoint
+├── api/                                    # FastAPI backend (Vercel serverless)
+│   ├── main.py                             # FastAPI app entrypoint
 │   ├── requirements.txt                    # Python dependencies
-│   └── sample/                             # Sample documents
-│
-├── backend/                                # Local Docker backend
-│   ├── modules/                            # Same analysis modules
-│   ├── Dockerfile
-│   ├── main.py                             # FastAPI entrypoint
-│   ├── requirements.txt
-│   ├── sample/
-│   └── venv/                               # Local virtual environment
-│
-├── frontend/                               # Next.js application
+│   ├── _uv/                                # Bundled uv binary for cold-start installs
+│   ├── bin/
+│   │   ├── tesseract                       # Bundled ARM64 Tesseract binary
+│   │   └── tessdata/                       # eng.traineddata, deu.traineddata, osd.traineddata
+│   └── modules/
+│       ├── __init__.py
+│       ├── preprocessing.py                # PDF→PNG, CLAHE, denoising
+│       ├── metadata_analysis.py            # PDF/EXIF metadata forensics
+│       ├── ocr_analysis.py                 # Tesseract OCR + text forensics
+│       ├── ocr_engine.py                   # OCR engine (pdfplumber + Tesseract fallback)
+│       ├── qr_analysis.py                  # 7-pass QR detection + URL validation
+│       ├── tampering_detection.py          # ELA, SIFT, noise, blur, 5 AI signals
+│       ├── signature_analysis.py            # 3-method signature cascade + Hough stamps
+│       ├── scoring.py                      # Weighted scoring + verdict logic
+│       ├── blockchain.py                   # SHA-256 hash + mock block
+│       ├── report_generator.py             # ReportLab PDF report
+│       └── utils.py                        # Document classifier
+├── frontend/
 │   ├── public/
-│   │   ├── favicon.ico
-│   │   ├── favicon.png
-│   │   └── logo.jpeg
+│   │   ├── index.html                      # Main UI (Tailwind CSS, friend's design)
+│   │   ├── logo.jpeg
+│   │   ├── favicon.ico / favicon.png
+│   │   └── test.html                       # Playground
 │   ├── src/
-│   │   ├── app/
-│   │   │   ├── globals.css                 # Global styles / Tailwind
-│   │   │   ├── layout.tsx                  # Root layout / metadata
-│   │   │   └── page.tsx                    # Main application page
-│   │   ├── components/
-│   │   │   ├── ui/                         # Shadcn UI components
-│   │   │   │   ├── badge.tsx
-│   │   │   │   ├── button.tsx
-│   │   │   │   ├── progress.tsx
-│   │   │   │   ├── scroll-area.tsx
-│   │   │   │   └── separator.tsx
-│   │   │   ├── upload-section.tsx          # File upload with drag-and-drop
-│   │   │   ├── score-gauge.tsx             # Circular score visualization
-│   │   │   ├── analysis-progress.tsx       # Progress during analysis
-│   │   │   ├── detailed-report.tsx         # Per-module findings
-│   │   │   ├── visual-evidence.tsx         # ELA/signature images
-│   │   │   └── result-actions.tsx          # Share, download, reset
-│   │   └── lib/
-│   │       └── api.ts                      # API client
-│   ├── components.json                     # Shadcn config
-│   ├── next.config.ts                      # Next.js configuration
+│   │   └── app/
+│   │       └── route.ts                    # GET / → serves public/index.html
+│   ├── src/components/                     # DEAD CODE — unused (old React components)
+│   ├── src/lib/                            # DEAD CODE — unused (old API client)
 │   ├── package.json
-│   ├── postcss.config.mjs
-│   ├── tsconfig.json
-│   └── eslint.config.mjs
-│
-├── docker-compose.yml                      # Local development stack
-├── start.sh                                # Quick-start script
-├── vercel.json                             # Vercel Services configuration
+│   ├── next.config.ts
+│   └── tsconfig.json
+├── vercel.json                             # Vercel Services routing config
+├── docker-compose.yml                      # Local dev with Docker
+├── venv/                                   # Local Python venv (not deployed)
 └── README.md
 ```
 
+<<<<<<< HEAD
 ---
 
 ## Deployment
@@ -529,112 +501,191 @@ Generates a downloadable PDF report using ReportLab.
 
 The app is deployed as a single Vercel project using [Services](https://vercel.com/docs/services), with the Next.js frontend at `/` and the FastAPI backend at `/api`. Import the repo in the [Vercel Dashboard](https://vercel.com/new) with **Framework Preset** set to **Services** — `vercel.json` at the repo root handles the rest.
 
+=======
+> **Note:** `src/components/`, `src/lib/`, `globals.css`, `layout.tsx` are dead code from a previous React-based frontend. The active frontend is `public/index.html` served via `src/app/route.ts`.
+>>>>>>> 0f1357b (Add JWT auth system, Docker setup, React page.tsx port)
 
 ---
 
-## Local Development
+## Forensic Analysis Modules
 
-### Option 1: Docker Compose (Recommended)
+### 1. Preprocessing (`preprocessing.py`)
 
-```bash
-# Clone the repository
-git clone https://github.com/ayushjha-creates/DOCVERIFY.git
-cd DOCVERIFY
+| Input | Conversion | Output |
+|-------|-----------|--------|
+| PDF | PyMuPDF `get_pixmap()` at 200 DPI | PNG per page |
+| PNG/JPG/TIFF/BMP | Pillow open + save as PNG | Single PNG |
 
-# Start all services
-docker compose up --build
-```
+Each page is cleaned: `fastNlMeansDenoising` (h=10) + CLAHE (clip=2.0, 8×8 grid).
 
-This starts:
-- **Frontend** at `http://localhost:3000`
-- **Backend API** at `http://localhost:8000`
-- **API Docs** (Swagger UI) at `http://localhost:8000/docs`
+### 2. Metadata Analysis (`metadata_analysis.py`)
 
-#### Docker Services
+**Python libraries:** PyMuPDF (fitz) for PDFs, Pillow EXIF for images
 
-| Service | Image | Port | Depends On |
-|---|---|---|---|
-| `frontend` | `node:20-alpine` | `3000` | — |
-| `backend` | `python:3.11-slim` | `8000` | — |
+**9 checks and their deductions:**
 
-The Docker setup installs Tesseract OCR and all Python dependencies inside the container.
+| Check | Trigger | Deduction |
+|-------|---------|-----------|
+| Suspicious Producer | Producer contains Canva, GIMP, Photoshop, ILovePDF, etc. | -15 pts |
+| Future Timestamp | Creation or modification date is in the future | -20 pts |
+| Created Today + Online Tool | Same-day creation with suspicious producer | -10 pts |
+| Date Mismatch | Creation and modification differ by >3 days | -10 pts |
+| Modified Before Creation | Modification date precedes creation (impossible) | -15 pts |
+| Unusual Hour | Modified between midnight and 5am or after 10pm | -5 pts |
+| AI Tool in Metadata | Producer/creator contains "ChatGPT", "Claude", "Gemini" | -15 pts |
+| AI Image Generator | Producer contains "DALL-E", "Midjourney", "Stable Diffusion" | -20 pts |
+| Missing Producer | Creator set but no producer → AI stripping indicator | -5 pts |
 
-### Option 2: Manual Setup
+### 3. OCR + Text Analysis (`ocr_analysis.py` + `ocr_engine.py`)
 
-#### Prerequisites
+**Libraries:** pytesseract, pdfplumber, OpenCV, NumPy
 
-- Node.js 20+
-- Python 3.11+
-- Tesseract OCR
-- npm or yarn
+**Extraction strategy:**
+- PDFs: try `pdfplumber` (native text extraction, preserves fonts) → fallback `pdf2image` + Tesseract
+- Images: OTSU threshold + sharpening kernel → Tesseract
 
-#### Backend Setup
+**8 analysis checks:**
 
-```bash
-# Navigate to backend
-cd backend
+1. **Low OCR confidence** — avg confidence < threshold, >30% of chars below 30% confidence
+2. **Mixed font sizes within a line** — char height differs by >2.2× from line mean
+3. **Inconsistent font in field** — coefficient of variation >0.5 in 2-6 word lines
+4. **Alignment inconsistency** — std of left edges > mean × 0.5 with max gap >200px
+5. **Suspicious keywords** — "edited", "tampered", "forged", "doctored", etc.
+6. **Control characters / repetition** — Unicode control chars, >25 repeated chars
+7. **AI-generated text patterns** — word-length std <1.5, AI phrases, low character diversity
+8. **Unicode anomalies** — zero-width spaces, BOM, soft hyphens (>3 occurrences)
 
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+**Scoring:** Flag weights summed → total_weight 0=OK, 1=WARN/10pts, 2=WARN/15pts, 3+=FAIL/20pts
 
-# Install Python dependencies
-pip install -r requirements.txt
+### 4. QR/Barcode Validation (`qr_analysis.py`)
 
-# Install Tesseract OCR (if not already installed)
-# macOS:
-brew install tesseract
+**Libraries:** OpenCV QRCodeDetector, pyzbar
 
-# Ubuntu/Debian:
-sudo apt-get install tesseract-ocr
+**7-pass detection cascade:**
 
-# Verify installation
-tesseract --version
+| Pass | Method | Image |
+|------|--------|-------|
+| 1 | `detectAndDecodeMulti` | Grayscale |
+| 2 | `detectAndDecodeMulti` | OTSU-thresholded |
+| 3 | Iterative mask-and-re-detect (8 rounds max) | Grayscale |
+| 4 | `detectAndDecode` (single) | Grayscale |
+| 5-6 | Overlapping horizontal tiles (left/center/right 72% strips) | Grayscale |
+| 7 | pyzbar decode | 3 image variants (RGB, L, grayscale) |
 
-# Start the API server
-uvicorn main:app --reload --port 8000
-```
+**Validation per QR:**
+- URL? → DNS resolution check + suspicious TLD detection (.xyz, .top, .tk, .ml, .ga, .cf)
+- Non-URL? → passes as OK
+- Duplicate data across QRs → DUPLICATE_QR_DATA flag
 
-The API is now available at `http://localhost:8000`. Swagger docs at `http://localhost:8000/docs`.
+**Scoring:** OK=0, WARN=15 (if any QR is suspicious or duplicates exist), FAIL=30 (if any QR fails decode)
 
-#### Frontend Setup
+### 5. Tampering Detection (`tampering_detection.py`)
 
-```bash
-# Navigate to frontend
-cd frontend
+**Libraries:** OpenCV, NumPy, Pillow
 
-# Install dependencies
-npm install
+**Non-AI forensic signals:**
 
-# Set API URL for local development
-echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > .env.local
+| Technique | Method | Threshold | Deduction |
+|-----------|--------|-----------|-----------|
+| **ELA** | JPEG recompress at q90, pixel diff | >1% tampered = high, >0.3% = medium | -20 / -5 |
+| **Noise Inconsistency** | 50×50 grid std-dev analysis | >2.5σ from mean in >7% of patches | -15 |
+| **SIFT Copy-Move** | FLANN feature self-matching, Lowe ratio 0.75 | >30% of keypoints self-match | -10 |
+| **Blur/Sharpness** | Laplacian variance per 100×100 grid | >3500 (AI sharp) / <50 (blurry) / >15% anomalous | -10 |
 
-# Start development server
-npm run dev
-```
+**AI-generation signals:**
 
-The frontend is now available at `http://localhost:3000`.
+| Signal | Method | Threshold | Deduction |
+|--------|--------|-----------|-----------|
+| Smooth Background | 40×40 patch std-dev mean | <3.0 (normal) / <2.0 (system docs) | -5 |
+| Pixel-Perfect Borders | Canny edge ratio per edge | All 4 edges <0.002 | -5 |
+| Rendered Text Texture | Gradient direction coherence | >0.90 (strong) / >0.82 (soft) | -10 / -5 |
+| Unnatural Colour | HSV saturation mean | <0.015 | -5 |
+| Inconsistent Resolution | FFT ring energy ratio | >100 | -5 |
 
-#### Running Both (without Docker)
+**Multi-signal AI deduction rule (replaces individual AI deductions):**
+- 0 AI flags → 0 deduction
+- 1 AI flag → 0 deduction (suppressed from output)
+- 2 AI flags → 10 deduction
+- 3 AI flags → 20 deduction
+- 4+ AI flags → 30 deduction
 
-Open two terminal windows:
+**Non-AI deduction** (ELA + noise + SIFT + blur) added on top.
 
-```bash
-# Terminal 1: Backend
-cd backend && source venv/bin/activate && uvicorn main:app --reload --port 8000
+**System-class forgiveness:** Background threshold loosened to 2.0; border + resolution checks skipped entirely.
 
-# Terminal 2: Frontend
-cd frontend && npm run dev
-```
+### 6. Signature Detection (`signature_analysis.py`)
 
-### Environment Variables
+**Libraries:** OpenCV, pytesseract, NumPy
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `NEXT_PUBLIC_API_URL` | No | `""` (same-origin) | API base URL. Set to `http://localhost:8000` for local dev. On Vercel, frontend and API share the same domain, so this stays empty. |
+**3-method cascade** (stops at first success):
+
+| Method | Region | Technique |
+|--------|--------|-----------|
+| **Method 1: Ink Cluster** | Bottom 45% | Adaptive threshold + morph close + contour filter (aspect 1.2-12, solidity 0.04-0.65) |
+| **Method 2: Dark Stroke** | Bottom half | Canny + dilate + top 5 contours by area |
+| **Method 3: Colour Ink** | Bottom half | HSV blue mask (100-140, 50-255, 30-200) + dark mask (0-180, 0-255, 0-80) |
+
+**Stamp detection:** Hough Circle Transform on full image, filtered by overlap with text.
+
+**Doc-class-aware response:**
+- `system` (boarding pass, ticket, receipt): No signature → status=OK, deduction=0
+- `formal` (certificate, degree, passport): No signature → status=WARN, deduction=5
+- `unknown`: No signature → status=OK, deduction=0
+
+**Confidence:** Default 70% when region found.
 
 ---
 
+## Scoring Engine (`scoring.py`)
+
+### Module Weights
+
+| Module | Weight | Rationale |
+|--------|--------|-----------|
+| Metadata | 1.5 | High signal-to-noise — metadata forgeries are either caught or clean |
+| QR | 1.5 | High weight — QR tampering directly suggests fraud |
+| Signature | 1.0 | Medium |
+| Tamper | 0.5 | Deliberately lowered — CV techniques can false-positive |
+| OCR | 0.3 | Lowest — OCR errors penalize legitimate scanned docs unfairly |
+
+### Formula
+
+```
+module_score         = max(0, 100 - engine_deduction)
+base_score           = Σ(module_score × weight) / Σ(weights)
+raw_deductions_total = Σ(all_engine_deductions)
+interim_score        = max(0, base_score - raw_deductions_total)
+```
+
+### Anomaly Scaling
+
+```
+anomaly_count = number of modules where deduction > 0
+
+if anomaly_count >= 3:  scaling = 0.6
+if anomaly_count == 2:  scaling = 0.75
+else:                   scaling = 0.9
+
+final_score = max(0, round(interim_score × scaling))
+```
+
+### Verdict Logic
+
+```
+if anomaly_count <= 1:  verdict = "Genuine"           (override, ignores score)
+elif final_score >= 50: verdict = "Suspicious"
+else:                   verdict = "Tampered"
+```
+
+The Genuine override ensures a clean document with one minor OCR glitch isn't classified as Tampered.
+
+### System-Class Forgiveness
+
+Applied before scoring: if a `system` document has tamper findings and all are AI-prefixed (none are non-AI tamper), the tamper deduction is zeroed out.
+
+---
+
+<<<<<<< HEAD
 ### Analyze Document
 
 ```
@@ -659,104 +710,71 @@ Content-Type: multipart/form-data
 | BMP | 20 MB | Converted to PNG internally |
 
 **Success Response (200):**
+=======
+## API Reference
+
+### `GET /api/health`
+>>>>>>> 0f1357b (Add JWT auth system, Docker setup, React page.tsx port)
 
 ```json
-{
-  "session_id": "a1b2c3d4-...",
-  "filename": "document.pdf",
-  "results": {
-    "analyzed_pages": 3,
-    "score": 87,
-    "status": "verified",
-    "reasons": ["Document appears authentic"],
-    "deductions": {
-      "metadata": 0,
-      "ocr": 5,
-      "qr": 0,
-      "tampering": 0,
-      "signature": 0
-    },
-    "metadata_status": "clean",
-    "ocr_status": "suspicious",
-    "qr_status": "clean",
-    "tampering_status": "clean",
-    "signature_status": "signature_detected",
-    "signature_count": 2,
-    "signature_details": [
-      {
-        "confidence": 0.85,
-        "bbox": [100, 200, 150, 50],
-        "type": "signature",
-        "area": 7500,
-        "page": 1
-      }
-    ],
-    "findings": {
-      "metadata": [],
-      "ocr": [
-        {
-          "type": "warning",
-          "title": "Low OCR confidence on page 2",
-          "detail": "Text region at (120, 340) has 62% confidence",
-          "points": 5,
-          "severity": "medium",
-          "page": 2
-        }
-      ],
-      "qr": [],
-      "tampering": [],
-      "signature": []
-    },
-    "blockchain": {
-      "blockchain_hash": "0x7f3a...",
-      "document_hash": "e3b0c442...",
-      "timestamp": "2026-06-07T12:00:00Z",
-      "verification_url": "https://verify.docverify.ai/0x7f3a...",
-      "block_number": 42
-    },
-    "marked_images": [
-      {
-        "page": 1,
-        "data": "base64-encoded-png"
-      }
-    ],
-    "signature_images": [
-      {
-        "page": 1,
-        "data": "base64-encoded-png"
-      }
-    ],
-    "preview_b64": "base64-encoded-png",
-    "report_b64": "base64-encoded-pdf"
-  }
-}
+{ "status": "healthy", "app": "DOCVERIFY AI" }
 ```
 
-**Error Response (400):**
-```json
-{
-  "detail": "Could not process document"
-}
-```
+### `GET /api/debug`
 
-**Error Response (413):**
-```json
-{
-  "detail": "File too large"
-}
-```
+Returns library versions, import status, environment info, and bundled binary size. Useful for debugging Vercel cold-start issues.
 
-**Error Response (500):**
-```json
-{
-  "detail": "Analysis failed: <error details>"
-}
-```
+### `POST /api/analyze`
+
+**Request:** `multipart/form-data` with field `file`
+
+**Supported formats:** PDF, PNG, JPG, JPEG, TIFF, BMP (max 20MB, 50 pages)
+
+**Response (200):**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `session_id` | string | UUID for this analysis session |
+| `filename` | string | Original filename |
+| `results.score` | number | Authenticity score 0-100 |
+| `results.status` | string | "Genuine", "Suspicious", or "Tampered" |
+| `results.base_score` | number | Pre-scaling weighted average |
+| `results.total_deductions` | number | Sum of all module deductions |
+| `results.anomaly_count` | number | Count of modules with deduction > 0 |
+| `results.ai_likelihood_score` | number | 0.0-1.0 (informative only, not in scoring) |
+| `results.reasons` | string[] | Human-readable reasons for score |
+| `results.deductions` | object | Per-module: `{metadata, ocr, qr, tampering, signature}` |
+| `results.engine_statuses` | object | Per-module status string |
+| `results.findings` | object | Per-module array of `{type, title, detail, points, severity}` |
+| `results.signature_details` | array | `{confidence, bbox, type, area, page}` |
+| `results.qr_details` | array | `{data, position, status, flags}` |
+| `results.blockchain` | object | `{blockchain_hash, document_hash, timestamp, verification_url}` |
+| `results.report_b64` | string | Base64-encoded PDF report |
+| `results.marked_images` | array | Base64-encoded ELA heatmaps per page |
+| `results.signature_images` | array | Base64-encoded signature highlight overlays |
+| `results.preview_b64` | string | Base64-encoded first-page preview |
+
+**Response (400):** Invalid or unprocessable file
+
+**Response (500):** Analysis failure (with error detail)
+
+---
+
+## Scoring Weights vs Findings Penalties
+
+There are two independent penalty systems:
+
+1. **Engine deductions** (per-module, single number returned by each engine) — used in weighted average formula. These are the authoritative penalties.
+
+2. **Finding point values** (per individual finding in the `findings` array) — informative only. Not used in scoring calculation. Present so the UI can display severity.
+
+The deduplication between the two exists because findings were originally the scoring source of truth, but the system migrated to engine-level deductions for simplicity.
 
 ---
 
 ## Tech Stack
 
+<<<<<<< HEAD
 ### Frontend
 
  | Technology | Purpose |
@@ -788,6 +806,11 @@ Content-Type: multipart/form-data
 | Technology | Version | Purpose |
 |---|---|---|
  | Technology | Version | Purpose |
+=======
+### Backend
+
+| Technology | Version | Purpose |
+>>>>>>> 0f1357b (Add JWT auth system, Docker setup, React page.tsx port)
 |-----------|---------|---------|
 | Python | 3.11+ | Runtime |
 | FastAPI | 1.x | ASGI web framework |
@@ -802,15 +825,130 @@ Content-Type: multipart/form-data
 | pdf2image | 1.16+ | PDF→image fallback |
 | uv | — | Fast pip replacement (bundled for cold-start) |
 
+<<<<<<< HEAD
 
+=======
+### Frontend
+
+| Technology | Purpose |
+|-----------|---------|
+| Static HTML + Tailwind CSS (CDN) | UI, served via Vercel edge |
+| Next.js 16 (route handler) | Serves `public/index.html` at `/` |
+| Google Fonts (Inter) | Typography |
+>>>>>>> 0f1357b (Add JWT auth system, Docker setup, React page.tsx port)
 
 ### Infrastructure
 
-| Technology | Purpose |
-|---|---|
-| Vercel (Services) | Hosting, serverless functions, CDN |
-| Docker / Docker Compose | Local development environment |
-| npm workspaces | Monorepo package management |
+| Service | Purpose |
+|---------|---------|
+| Vercel (Services) | Serverless hosting, CDN, routing |
+| Vercel KV / Blob | Not used yet — available for caching |
+
+---
+
+<<<<<<< HEAD
+## Known Weaknesses
+
+| Area | Issue | Impact |
+|------|-------|--------|
+| Performance | Sequential page loop | Scales O(n) with page count |
+| Performance | Tesseract subprocess spawn per page | High latency, no process reuse |
+| Performance | SIFT O(n²) matching | Slow on text-heavy, high-feature docs |
+| Performance | Vercel 300s function timeout | Complex 50+ page docs may timeout |
+| Accuracy | ELA false positives on multi-saved JPEGs | Clean images can show ELA errors |
+| Accuracy | SIFT false positives on repeating patterns | Grids, tables, logos trigger copy-move |
+| Accuracy | Signature detection only checks *presence* | Cannot authenticate signature against known sample |
+| Accuracy | AI detection is statistical | High-quality prints can look "AI-like" |
+| Dependency | Tesseract binary is ARM64-only | Fails on x86 Vercel functions without system Tesseract |
+| Dependency | Vercel `/tmp` 512MB limit | Large docs with heatmaps can exceed space |
+| Security | No authentication | Anyone can use the API (rate-limited only by Vercel) |
+| Security | No malware scanning | Uploaded files not scanned for malicious content |
+| Code quality | Zero test coverage | No unit/integration tests |
+
+---
+
+## Possible Improvements
+
+**Near-term (next sprint):**
+- Delete dead frontend files (`src/components/*`, `src/lib/*`, `globals.css`, `layout.tsx`)
+- Add pytest suite for each module
+- Parallelize page processing with `asyncio` or `ThreadPoolExecutor`
+- Add API key authentication with rate limiting
+- Store results in SQLite/PostgreSQL for session history
+
+**Long-term (production):**
+- Celery/Redis task queue to bypass Vercel 300s timeout
+- Real blockchain verification (Ethereum smart contract or Stellar)
+- GPU-based deepfake detection (EfficientNet fine-tuned on document forgeries)
+- Multi-language OCR support (Hindi, Arabic, Chinese tessdata)
+- Comparison mode — diff two documents
+- Batch upload and analysis
+- Webhook callbacks for async results
+- Role-based access control for enterprise use
+
+---
+
+## License
+
+MIT — see LICENSE file.
+
+Built for hackathon demonstration. Not production enterprise software — results are indicative and should be verified through additional means.
+
+## Performance & Limits
+=======
+## Local Development
+>>>>>>> 0f1357b (Add JWT auth system, Docker setup, React page.tsx port)
+
+### Prerequisites
+
+- Python 3.11+
+- Node.js 20+
+- Tesseract OCR (`brew install tesseract` on macOS)
+
+### Backend
+
+```bash
+cd api
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8000
+```
+
+API at `http://localhost:8000`, Swagger at `http://localhost:8000/docs`.
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > .env.local
+npm run dev
+```
+
+UI at `http://localhost:3000`.
+
+### Docker
+
+```bash
+docker compose up --build
+```
+
+Starts backend (`:8000`) and frontend (`:3000`).
+
+---
+
+## Deployment
+
+Deployed on Vercel via [Services](https://vercel.com/docs/services). `vercel.json` at repo root routes `/api/*` to the FastAPI service and `/*` to the Next.js service.
+
+```bash
+vercel --prod
+```
+
+The backend bundles Tesseract as an ARM64 binary inside `api/bin/`. On cold start, the `_ensure_deps()` function auto-installs any missing Python packages using the bundled `_uv/uv` binary, falling back to pip.
+
+**Cold-start duration:** ~3-8s (Python dependency loading + Tesseract verification). Subsequent requests are sub-second.
 
 ---
 
@@ -860,71 +998,3 @@ Content-Type: multipart/form-data
 MIT — see LICENSE file.
 
 Built for hackathon demonstration. Not production enterprise software — results are indicative and should be verified through additional means.
-
-## Performance & Limits
-
-| Aspect | Limit |
-|---|---|
-| Max file size | 20 MB |
-| Max pages (PDF) | 50 pages |
-| Analysis timeout | 300 seconds (5 minutes) |
-| Function memory | 1024 MB |
-| Supported languages (OCR) | English (default), expandable via tessdata |
-
-**Performance tips:**
-- Single-page documents analyze fastest (usually 10–30 seconds)
-- Large PDFs with many pages increase processing time linearly
-- Documents with complex graphics take longer for ELA analysis
-- High-resolution images are downscaled to 2000px on the longest edge
-
----
-
-## Troubleshooting
-
-### Common Issues
-
-| Issue | Cause | Solution |
-|---|---|---|
-| `File too large` | Upload exceeds 20 MB | Compress or split the document |
-| `Could not process document` | Unsupported format or corrupted file | Check file format (PDF/PNG/JPG/TIFF/BMP) |
-| Analysis timeout | Document too complex or large | Reduce page count or image resolution |
-| OCR returns no text | Scanned document without text layer | Ensure document is legible and properly scanned |
-| CORS errors (local dev) | Backend not running or wrong port | Check `NEXT_PUBLIC_API_URL` is set to `http://localhost:8000` |
-| `tesseract not found` | Tesseract not installed (local dev) | Run `brew install tesseract` (macOS) or `apt-get install tesseract-ocr` (Linux) |
-| Deployment shows old version | Vercel cache | Trigger redeploy with **Clear Build Cache** |
-| Services not working | Framework not set to Services | In Vercel dashboard, set Framework Preset → **Services** |
-
-### Debugging
-
-**Check API health:**
-```bash
-curl https://your-domain.vercel.app/api/health
-```
-
-**Test analysis with a local file:**
-```bash
-curl -X POST https://your-domain.vercel.app/api/analyze \
-  -F "file=@sample.pdf"
-```
-
-**View Vercel function logs:**
-```bash
-vercel logs
-```
-
-**Check deployment status:**
-```bash
-vercel inspect
-```
-
----
-
-## Security
-
-- **File validation**: File type and size are validated on both client and server
-- **No persistent storage**: Uploaded files are processed in `/tmp` and deleted after analysis
-- **CORS**: Allowed origins are configurable; set to `*` for development
-- **Python dependencies**: Pinned versions in `requirements.txt`
-- **No secrets in code**: Environment variables for configuration
-
----

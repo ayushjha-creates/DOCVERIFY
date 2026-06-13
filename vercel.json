@@ -6,7 +6,7 @@
             "framework": "nextjs"
         },
         "api": {
-            "entrypoint": "api/index.py",
+            "entrypoint": "api/main.py",
             "routePrefix": "/api",
             "framework": "fastapi"
         }

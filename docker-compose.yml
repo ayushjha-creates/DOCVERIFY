@@ -1,9 +1,7 @@
-version: "3.9"
-
 services:
   backend:
     build:
-      context: ./backend
+      context: ./api
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
@@ -12,6 +10,7 @@ services:
       - backend_data:/app/reports
     environment:
       - PYTHONUNBUFFERED=1
+      - JWT_SECRET=dev-secret-key-change-in-production
     restart: unless-stopped
 
   frontend:
